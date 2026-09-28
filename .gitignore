@@ -1,0 +1,4 @@
+.env
+*.key
+*.bak
+.DS_Store

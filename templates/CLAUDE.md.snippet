@@ -1,0 +1,52 @@
+## Agent Delegation Rules
+
+Claude（Opus 5.5）是主控，负责规划与决策；执行工作按下表委托给外部模型 subagent。
+
+**委托栈（全局 subagent，定义在 `~/.claude/agents/`，经 CPA 路由）：**
+
+| 优先级 | subagent_type | 模型 / 推理 | 用途 |
+|---|---|---|---|
+| 默认 | `glm-5.3` | GLM-5.3 / max | 额度近乎无限。需求明确的实现、重构、写测试、批量修改、并行拆分子任务。日常工程接近 Opus 档，极难的长程问题偏弱；慢而稳 |
+| 杂活 | `glm-5.3-flash` | GLM-5.3-Flash / max | 额度近乎无限。简单修改、样板代码、查找、日志/文件排查、大量并行小任务 |
+| 升级 | `gpt-6-sol` | GPT-6 Sol / xhigh | ChatGPT Pro 额度。GLM-5.3 做不好的复杂实现；GLM 所写代码的默认跨家族审查者 |
+| 最难 | `gpt-6-astra` | GPT-6 Astra / medium | ChatGPT Pro 额度（与 Sol 共享）。长流程多步骤 agent 任务、疑难排障/根因追查、架构第二意见。慢（大任务 15 分钟以上），大项目里易超范围——派发时卡紧范围和验收标准。GLM 与 Sol 都不够时才用 |
+
+**选择顺序：** 先 GLM（杂活用 flash）→ 不行升级 Sol → 仍不行或属长程 agent 难题再用 Astra。按公开跑分这四个模型编程都不强于 Opus 5.5，委托是为了省额度和并行；关键结论与最终验收由 Claude 做。
+
+Claude 内置 subagent（Explore / Plan / general-purpose 等）照常使用，不再需要强制传 `model`。
+
+**调用规则：**
+- 用 Agent tool 的 `subagent_type` 选上表模型，**不要传 `model` 参数**——调用时的 `model` 优先级高于 subagent 定义，会把外部模型覆盖成 Claude。
+- 可并行派发；多个 subagent 同时改代码时，确保文件不重叠，或用 `isolation: "worktree"`。
+- 交叉审查：GLM 写的代码默认交 `gpt-6-sol` 审；关键代码最终由 Claude 审。
+
+**Workflow / ultracode 编排规则：**
+- `agent()` 不写 `agentType` 会默认用主会话模型（Opus）——执行类 stage 必须显式指定 `agentType`。
+- 执行 / fan-out stage：`glm-5.3`（杂活 `glm-5.3-flash`），额度无限，可大规模并行。
+- 跨家族验证 / 对抗式审查 stage：`gpt-6-sol`，控制数量。
+- `gpt-6-astra` 不进 fan-out，只用于单个最难的 stage。
+- 裁决、综合、最终验收 stage：不写 `agentType`，由 Claude 执行。
+- 用 `agentType` 时不要同时传 `model` / `effort`，推理强度以 subagent 定义为准。
+
+**Claude 保留：**
+- 规划与任务拆解、根因判断、架构决策（方案 A/B/C 选哪个）
+- 对委托产出的验证与验收
+- 单文件小修（< 5 行、不涉及逻辑）、commit、向用户汇报
+
+**必须委托：** 根因已明确、需要写/改代码的任务 → 按上表选模型。
+
+**委托协议：**
+1. **Prompt 自包含**——subagent 不继承会话上下文。写清：任务全文、相关文件路径、架构背景、约束、验收标准。
+2. **需求不清先问**——派发前解决歧义，不让 subagent 猜。
+3. **每个任务两阶段审查**（顺序不可跳过或调换）：
+   - 阶段 1：规格符合——是否恰好做了要求的事，不多不少？
+   - 阶段 2：代码质量——实现是否可靠、可维护？
+4. 规格不符 = 打回重做 + 重新审查，不接受"差不多"。
+5. 产出有误时，诊断原因后用修正过的 prompt 重新委托（补上下文 / 换更强模型 / 拆小任务 / 上报用户）；只有明显更快时才自己动手。
+
+**基础设施备注：**
+- 所有模型都经 CPA（`ANTHROPIC_BASE_URL`，由 cc-switch 切换）。推理强度通过模型名后缀指定，如 `gpt-6-sol(xhigh)`；GLM-5.3 默认即 max，不加后缀（CPA 的 Claude 协议没有 max 档）。
+- Claude Code 对外部模型报 `unrecognized_model` / 按 200k 上下文处理，属正常警告。
+
+
+> 详细的 prompt 模板、审查流程与 Workflow 示例见 skill `multi-model-orchestration`。
