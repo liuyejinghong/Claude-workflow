@@ -10,6 +10,10 @@ Git tag 格式为 `<mod>-v<version>`，例如 token-speed 0.2.1 使用 `token-sp
 - 根 `.claude-plugin/marketplace.json` 中对应插件的 `version`。
 - mod README 标题中的版本。
 - mod 命令输出中的版本文本；token-speed 对应 `/tok-speed` 的 command text。
+- `mods/README.md` 版本表中该 mod 的版本。
+- 根 `README.md` 的 Mods 入口（当前版本文字与链接）和根 `CHANGELOG.md` 中的 mod 发布条目。根 `VERSION` 与编排仓库版本不随 mod 版本变化。
+
+以上入口若不同步，会停留在旧版本，因此发布时须一并更新。
 
 发布前先校验 manifest，运行测试和 typecheck。以 token-speed 为例，从仓库根目录执行：
 
