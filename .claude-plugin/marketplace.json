@@ -1,13 +1,15 @@
 {
   "name": "claude-workflow-mods",
-  "owner": { "name": "liuyejinghong" },
+  "owner": {
+    "name": "liuyejinghong"
+  },
   "metadata": {
     "description": "可独立安装的 Claude Code function-hooks mods"
   },
   "plugins": [
     {
       "name": "token-speed",
-      "version": "0.2.1",
+      "version": "0.3.1",
       "source": "./mods/token-speed",
       "description": "主控与活跃子代理各一行实时估算速率，各代理独立按请求模型累计 API 速率"
     }

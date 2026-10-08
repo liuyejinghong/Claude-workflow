@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "claude-haiku-5-5", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceURL": "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
+      "additionalSources": ["https://platform.claude.com/docs/en/build-with-claude/context-windows"],
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-opus-5-5", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceURL": "https://platform.claude.com/docs/en/models/opus-5-5/overview",
+      "additionalSources": ["https://platform.claude.com/docs/en/build-with-claude/context-windows"],
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-sonnet-5-5", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceURL": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
+      "additionalSources": ["https://platform.claude.com/docs/en/build-with-claude/context-windows"],
+      "date": "2026-10-09"
+    },
+    {
+      "id": "gpt-6.1-sol", "aliases": [],
+      "defaultWindow": 272000, "maxWindow": 872000,
+      "apiContextWindow": 1050000, "maxInputTokens": 922000,
+      "sourceScope": "official-codex-default",
+      "sourceURL": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json",
+      "additionalSources": ["https://developers.openai.com/api/docs/models/gpt-6.1-sol"],
+      "date": "2026-10-09"
+    },
+    {
+      "id": "gpt-6-astra", "aliases": [],
+      "defaultWindow": 272000, "maxWindow": 872000,
+      "apiContextWindow": 1050000, "maxInputTokens": 922000,
+      "sourceScope": "official-codex-default",
+      "sourceURL": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json",
+      "additionalSources": ["https://developers.openai.com/api/docs/models/gpt-6-astra"],
+      "date": "2026-10-09"
+    },
+    {
+      "id": "glm-5.3", "aliases": [], "defaultWindow": null, "contextWindow": 1000000,
+      "sourceScope": "official-capacity-only", "sourceValue": "1M (decimal normalized)",
+      "sourceURL": "https://docs.z.ai/guides/llm/glm-5.3", "date": "2026-10-09"
+    },
+    {
+      "id": "glm-5.3-flash", "aliases": [], "defaultWindow": null, "contextWindow": 1000000,
+      "sourceScope": "official-capacity-only", "sourceValue": "1M (decimal normalized)",
+      "sourceURL": "https://docs.z.ai/guides/llm/glm-5.3-flash", "date": "2026-10-09"
+    }
+  ],
+  "overrides": [
+    { "id": "gpt-6.1-sol", "aliases": [], "window": 272000, "reason": "User-confirmed CLI window" },
+    { "id": "glm-5.3", "aliases": [], "window": 1000000, "reason": "User-confirmed CLI window" },
+    { "id": "glm-5.3-flash", "aliases": [], "window": 1000000, "reason": "User-confirmed CLI window" }
+  ]
+}

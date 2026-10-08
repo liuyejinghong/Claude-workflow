@@ -52,6 +52,11 @@ async function command($: Engine, args = '', name = 'tok-speed') {
 }
 function setup(on: On, roster: () => Promise<AgentInfo[]> = async () => []): MockClock {
   const clock = mock.clock(on)
+  on('fs.read', async () => ({ value: JSON.stringify({ version: 1, models: [], overrides: [
+    { id: 'gpt-6.1-sol', aliases: [], window: 272000, reason: 'Test override' },
+    { id: 'glm-5.3', aliases: [], window: 1000000, reason: 'Test override' },
+    { id: 'glm-5.3-flash', aliases: [], window: 1000000, reason: 'Test override' },
+  ] }) }))
   on('agent.list', async () => ({ value: await roster() }))
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
   on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
@@ -148,8 +153,9 @@ test('API average weights request durations, excludes tool gaps, ignores turn to
   await clock.advance(20_000)
   await finishAt(clock, consume($.turn.step(request('request-a', 1))), 3000)
   const bucket = (await state($)).models.find(item => item.model === 'request-a')
-  expect(bucket).toEqual({ model: 'request-a', outputTokens: 400, durationMs: 5000, samples: 2, lastApi: 100 })
-  expect((await command($)).text).toMatch('Avg(API) 80.0 tok/s')
+  expect(bucket).toMatchObject({ model: 'request-a', outputTokens: 400, durationMs: 5000, samples: 2, lastApi: 100 })
+  expect(bucket?.log?.length).toBe(2)
+  expect((await command($)).text).toMatch('Avg 80.0 tok/s')
   await $.turn.complete({ answer: 'whole turn', durationMs: 25_000, isAborted: false, turnId: 'turn', reason: 'answer', usage: usage(400) })
   expect((await state($)).models.find(item => item.model === 'request-a')).toEqual(bucket)
   await finishAt(clock, consume($.turn.step(request('request-b', 2))), 3000)
@@ -179,8 +185,9 @@ test('CPA unavailable/invalid usage never becomes zero; valid zero counts and ze
     if (index === 1) expect(held.currentModel).toBe('fallback')
   }
   const bucket = (await state($)).models.find(item => item.model === 'fallback')
-  expect(bucket).toEqual({ model: 'fallback', outputTokens: 100, durationMs: 2000, samples: 2, lastApi: null })
-  expect((await command($)).text).toMatch('Avg(API) 50.0 tok/s')
+  expect(bucket).toMatchObject({ model: 'fallback', outputTokens: 100, durationMs: 2000, samples: 2, lastApi: null })
+  expect(bucket?.log?.map(sample => sample.tokens)).toEqual([100, 0])
+  expect((await command($)).text).toMatch('Avg 50.0 tok/s')
   expect((await command($)).text).not.toMatch('Infinity')
 })
 
@@ -275,20 +282,22 @@ test('UI preserves downstream drawing, hides during survey/no rows, commands han
   expect(calls).toBe(1)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'token-speed', surface, component: 'AbovePrompt', props: BAND })
-    const line = await ui.find({ type: 'Text', text: /Last\(API\)/ })
-    expect(line?.text).toMatch('Last(API) 100.0 tok/s')
+    const line = await ui.find({ type: 'Text', text: / · Last / })
+    expect(line?.text).toMatch('Last 100.0')
+    expect(line?.text?.match(/tok\/s/g)?.length).toBe(1)
     expect(line?.props.wrap).toBe('truncate-end')
     expect((await ui.find({ type: 'Text', text: 'underlying band' }))?.text).toBe('underlying band')
     await ui.unmount()
     const narrow = await $.ui.mount({ plugin: 'token-speed', surface, component: 'AbovePrompt', props: { ...BAND, bodyColumns: 80 } })
-    const shortLine = await narrow.find({ type: 'Text', text: /Avg\(API\)/ })
-    expect(shortLine?.text).toMatch('main · requested · Live —')
-    expect(shortLine?.text).toMatch('Avg(API) 100.0 tok/s')
-    expect(shortLine?.text).not.toMatch('Last(API)')
+    const shortLine = await narrow.find({ type: 'Text', text: / · Avg / })
+    expect(shortLine?.text).toMatch('main · requested · — · Ctx')
+    expect(shortLine?.text).toMatch(/Live\s+—/)
+    expect(shortLine?.text).toMatch('Avg 100.0 tok/s')
+    expect(shortLine?.text).not.toMatch('Last ')
     await narrow.unmount()
     for (const props of [{ ...BAND, hasSurvey: true }, { ...BAND, maxRows: 0 }]) {
       const hidden = await $.ui.mount({ plugin: 'token-speed', surface, component: 'AbovePrompt', props })
-      expect(await hidden.find({ type: 'Text', text: /Last\(API\)/ })).toBeUndefined()
+      expect(await hidden.find({ type: 'Text', text: / · Last / })).toBeUndefined()
       expect((await hidden.find({ type: 'Text', text: 'underlying band' }))?.text).toBe('underlying band')
       await hidden.unmount()
     }
