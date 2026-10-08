@@ -1,5 +1,16 @@
 # token-speed Changelog
 
+## 0.3.1
+
+对应 tag `token-speed-v0.3.1`；保留已发布的 0.3.0 tag。
+
+- 每个代理同一行显示模型、effort、上下文和速度，删除重复主控会话行，工作区最后。仅 UI 隐藏渠道前缀，统计桶和命令保留完整模型；速率单位每行只标一次。
+- 主控 reload 读取模型专属/全局 effort 配置作为后备，请求和 classic applied 读数优先，缺值显示 `—`，状态记录来源，不猜默认 high。
+- 上下文 registry 使用静态 data/model-contexts.json，启动读取一次、reload重新加载，不联网。七个精确型号覆盖Claude Haiku/Opus/Sonnet 5.5官方1M，GPT Sol/Astra的Codex272k默认与独立max/API元数据，以及GLM-5.3/Flash官方容量1M。明确用户overrides独立优先；官方default/capacity与CLI配置来源分开，命令显示registry版本、来源URL和核验日期，读取/解析失败保留已确认三个用户窗口。
+- 子代理上下文仍用最近响应CLI输入+cache tokens，不累计、不借主控比例。精确alias匹配，不把邻近或未核实型号映射到其它型号，官方max不因[1m]自动选用。成功安装的压缩清输入读数而保留窗口，预计算和跳过不清。
+- 进度条改为固定 10 格暗底块状条，整格█+尾部1/8cell，共 80 视觉档位（0–100 映射为 81 种可见状态，相邻整数百分比可同档）；数字仍为整数 1%，不宽屏增长。填充固定 theme `rate_limit_fill`、轨道 theme `rate_limit_empty`（原生 usage meter 语义，依据 https://code.claude.com/docs/en/terminal-config#color-token-reference），Ctx 数值用 text/inactive，不随 severity 变化，无渐变。模型名 text，主控标签 claude，有效速率 text、缺值 inactive，状态与工作区 inactive（aborted/warning、error/error 保留）。按终端显示宽度对齐，动态预算先省略status、再Last、再bar，保留主要数据。
+- 清理 README 本机绝对路径，提供可移植安装及0.3.1 tag示例。原速度与24小时Avg计算合同保持。
+
 ## 0.3.0
 
 新增会话行、工作区行与多行对齐，Avg 改为 24 小时滚动窗口。对应 tag `token-speed-v0.3.0`。

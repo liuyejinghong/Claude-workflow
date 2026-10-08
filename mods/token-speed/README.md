@@ -1,22 +1,44 @@
-# token-speed 0.3.0
+# token-speed 0.3.1
 
-适用于 Claude Code 2.1.294 的自用 function-hooks mod。在终端和 desktop 的提示框上方显示主控和每个活跃子代理的输出速率，附会话行（模型、effort、上下文进度）与工作区行（git 分支）。仅观察原有请求，不调用额外模型，不引入 tokenizer 或网络请求；工作区分支通过引擎 process API 调用本机 git（只读分支查询）。
+适用于 Claude Code 2.1.294 的 function-hooks mod。在提示框上方，主控与每个活跃子代理各用一行显示模型、effort、上下文与输出速率，工作区放在最后一行。只观察原有请求，不调用额外模型、不引入 tokenizer 或网络请求；分支通过引擎 process API 调用本机 git。
 
 ```text
-codex/gpt-6.1-sol · max · █████░░░░░ 45%/272k
+⚡ main · gpt-6.1-sol · high · Ctx ██████▊    67%/272k · Live ~42.1 · Last 31.2 · Avg 28.6 tok/s · streaming
+↳ abcdefg1 · glm-5.3-flash · max · Ctx █▍         14%/1.0M · Live ~35.2 · Last 29.1 · Avg 30.4 tok/s · streaming
 ⌂ Claude-workflow on main
-⚡ main · codex/gpt-6.1-sol · Live ~42.1 tok/s · Last 31.2 tok/s · Avg 28.6 tok/s · streaming
-↳ abcdefg1 · glm-5.3-flash · Live ~35.2 tok/s · Last 29.1 tok/s · Avg 30.4 tok/s · streaming
-↳ abcdefg2 · codex/gpt-6.1-sol · Live — · Last 40.2 tok/s · Avg 38.8 tok/s · idle
 ```
 
-主控始终第一，子代理按首次观察顺序每个一行；切换到子代理 view 仍显示全部。短 id 会延长到可区分同会话中的代理，所以相同模型的两个代理也可辨识。子代理在请求间工具执行期间保留行，Live 为 `—`，不虚构 token；turn.complete 或 roster 的明确终态后立即隐藏，历史仍可通过命令查看。无任意四行上限，滚动由引擎的 AbovePrompt 行数布局负责。
+主控始终第一，子代理按首次观察顺序每个一行，切换 view 不过滤。短 id 自动延长到可区分同会话代理；工具间隙保留行，Live 为 `—`，明确终态后隐藏，历史通过 `/tok-speed` 查询。带 survey 或 `maxRows=0` 时隐藏，其它插件和引擎的内容原样保留。只有主控时为代理行加工作区行，共两行；行数预算不足先丢工作区。
 
-会话行显示主控模型（与主控行同源）、推理档位与上下文进度。effort 取 turn.step 事件的 `effort` 字段原样，配色 low `success`、medium `planMode`、high `warning`、xhigh/max `error`、数值 `subtle`；上下文进度用 `$.session.usage()`（与状态栏同源）：10 格进度条按占用分段变色（前 4 格 `success`、中 3 格 `warning`、后 3 格 `error`，空格 `inactive`），后接 `百分比/窗口`（272000 → `272k`，1000000 → `1.0M`）；首次响应前无 tokens/percent，显示空条与 `—/窗口`。工作区行显示项目名（git 仓库根目录名，否则会话根目录名）与当前分支（`git branch --show-current`，detached HEAD 只显示项目名），约 5 秒刷新。
+各列按终端显示宽度对齐，包括双宽的 `⚡`、CJK 与常见 emoji。速率数字右对齐，单位 `tok/s` 每行只显示一次。动态宽度不足时依次省略 status、Last、缩短进度条，始终保留 effort、上下文数值、Live 与 Avg；特别窄时可缩短模型显示。渲染前计算可见内容宽度，Text 的 `truncate-end` 只作最后保护。
 
-多行时标签、模型、Live、Last、Avg 各列按可见行最大宽度对齐（数值右对齐）；单行不填充。行数预算（AbovePrompt maxRows）不足时优先保留速度行，其次会话行，最后工作区行。每行 Text 使用 `truncate-end`；可用宽度不足 110 列时省略 Last，不足 90 列省略进度条本体（保留百分比），保留角色、渠道/模型、Live、Avg。带 survey 或 `maxRows=0` 时隐藏，并保留其它插件和引擎的 AbovePrompt 内容。
+进度条是固定 10 个终端 cell 的短矩形，轨道使用 theme `rate_limit_empty`，整格填充 `█`，尾部使用 `▏▎▍▌▋▊▉` 表示 1/8 cell。共 80 个视觉档位（10 格 × 8 档），因此 0–100 的整数百分点不是每个都有不同的条形：相邻百分点可落在同一档（例如 67% 与 68% 的条形相同，但数字 `67%`、`68%` 不同）。宽屏也不扩展为长条。窄屏可省略条形，数值始终保持整数 1% 精度。填充固定使用 theme `rate_limit_fill`，不随占用变化，没有横向渐变；Ctx 数值用 `text`，未知占用用 `inactive`。未知占用只画轨道空条，并以 `—%` 或 `?` 明确标为未知，不能解释为 0%。
 
-显示使用嵌套 Text 和 theme-aware palette，颜色跟随 CLI 主题：身份与模型为 `planMode`（默认呈青色风格，主控身份加粗）；有效 Live 为加粗 `success`，Avg 为 `success`，Last 与缺值为 `inactive`，标签和分隔符为 `subtle`。状态 waiting、aborted、usage unavailable 为 `warning`，error 为 `error`，streaming 为 `planMode`，idle 为 `inactive`；主题可改变这些颜色的具体呈现。
+主控上下文来自 `$.session.usage()`，与状态栏同口径，最近响应的 uncached + cache-read + cache-written 输入 tokens 除以窗口；首次响应或成功压缩后无读数显示 `—%/窗口`。子代理输入量来自自己最近一次响应的 CLI usage，不累计多次请求。子代理分母由启动时读取一次的 `data/model-contexts.json` 提供，无联网刷新。优先顺序为实际运行窗口、明确 CLI override、官方默认、未知；官网仅提供容量时明确标为官方 capacity。输入始终取自己最近一次 CLI response，主控仍以 `$.session.usage()` 为准。数据中的官方来源、核验日期和 registry 版本可通过 `/tok-speed` 查看。读取或严格解析失败时，官方表为空，保留已确认的 Sol 272000、GLM-5.3/Flash 1000000 后备，不中断请求。
+
+官方记录恰好覆盖 `claude-haiku-5-5`、`claude-opus-5-5`、`claude-sonnet-5-5`（共享输入输出上下文 1M）；`gpt-6.1-sol`、`gpt-6-astra`（Codex 官方默认 272000，max 配置 872000，API 总上下文 1050000/max input 922000 仅元数据）；`glm-5.3`、`glm-5.3-flash`（官网容量 1M，没有独立默认/最大输入声明）。用户 override 独立存放，不混作官方事实。匹配只用去渠道的 canonical 尾名及精确 aliases，不匹配子串，不把 flashx 或未知邻近型号映射到已知型号；不使用动态 `haiku`/`opus`/`sonnet` 别名，不因 `[1m]` 选择官方最大值。来源分别记录为 `cli-input-window-config`、`cli-input-official-default`、`cli-input-official-capacity`。
+
+新增 provider/model 时，只添加具有官方 URL、核验日期和精确型号的记录；未核实的型号保持 unknown，或单独添加有理由的 local override。模型最大上下文不保证路由实际 cap，registry 不把最大值当默认。不复制主控百分比，数值超过窗口可显示超过 100%，只限制条形填充。成功安装的压缩清对应行输入读数，保留已知窗口；precompute 和 skip 不清。
+
+Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.effort`，`applied` 为 classic PostToolUse/Stop 的 `effort.level`，`configured` 为主控当前模型的 `modelSettings[model].effortLevel`、全局 `effortLevel` 或明确模型后缀。reload 后主控立即读取配置后备，无数据为 `—`；不硬编码 high，不扫描 agent 定义。配置档位不保证外部 provider 已应用。只选取 settings 的这些 effort 字段，不保存或打印其它 settings。
+
+工作区为仓库根目录名（非 git 使用会话根目录名），附当前分支；detached HEAD 不显示分支，约每 5 秒刷新。显示使用 theme tokens：主控标签为 `claude`、子代理标签与行次要信息为 `inactive`；模型名为 `text`（普通文本，不着色）；有效 Live/Avg/Last 数字为 `text`，缺值为 `inactive`，速率不以 `success` 表示；effort 按档位着色（数值为 `subtle`）；状态 idle/waiting/streaming 为 `inactive`，aborted 为 `warning`，error 为 `error`，usage unavailable 为 `warning`。工作区行为 `inactive`。颜色跟随 CLI 主题。
+
+## 安装
+
+```text
+/plugin marketplace add liuyejinghong/Claude-workflow
+/plugin install token-speed@claude-workflow-mods
+```
+
+也可用固定 tag `token-speed-v0.3.1` 获取源文件，并从 checkout 加载：
+
+```sh
+git clone --branch token-speed-v0.3.1 https://github.com/liuyejinghong/Claude-workflow.git
+claude --plugin-dir ./Claude-workflow/mods/token-speed
+```
+
+安装后的插件由 Claude Code 加载。开发时修改自己的 checkout；请勿直接修改 plugins/cache 副本。
 
 ## 命令
 
@@ -30,7 +52,7 @@ codex/gpt-6.1-sol · max · █████░░░░░ 45%/272k
 
 每个代理独立按 **请求 `turn.step.model`** 累计；两个相同模型代理不共享统计桶。`usage.model` 仅是响应事实，不改变标签或桶。真实请求模型切换建立新桶。
 
-名称 trim 后反复去除末尾 `[1m]`、`(low|medium|high|xhigh|max)` 和 `:low|medium|high|xhigh|max` 配置后缀。例如 `codex/gpt-6.1-sol:high` 和 `codex/gpt-6.1-sol(high)[1m]` 均显示 `codex/gpt-6.1-sol`。只保留已有渠道前缀，不推断渠道；`glm-5.3-flash[1m]` 显示 `glm-5.3-flash`。同一代理后续请求若是 bare 名且与该代理已知渠道模型尾名一致，沿用已有前缀；不同 bare 模型保留其 bare 形态。其它合法冒号部分不会删除。
+统计桶与命令保留已有完整渠道模型名，UI 仅隐藏最后 `/` 之前的渠道前缀；其它合法冒号部分不会删除。
 
 0.1 的 host state 会迁移到主控行，其 response-model 均值保留为 `[legacy v0.1 response model]` 桶，在 `/tok-speed` 可查。由于旧桶缺乏请求渠道证据，它们不会随意合并或混入 0.2 的请求模型均值；UI Avg 只取新请求桶。
 
@@ -66,6 +88,4 @@ claude plugin test <mod-dir>
 
 本目录 tsconfig 开启 strict/noUncheckedIndexedAccess，包含 hooks、tests、自有 types 和生成的 `.claude-plugin/types`。测试使用实际 `claude-code/testing` 和 mock.clock 合成 stream，不联网或调用模型。
 
-测试保留 text/thinking/tool/input/stop chunk 与 ChunkRef、单次 next、最终结果、完成前 Live、窗口/Unicode、加权平均、CPA usage、失败/关闭流、UI 透传与隐藏、reset/clear、reload 与仪表故障合同；新增 main+3 child 并发、同模型独立桶、各 view 主控 first、canonical suffix/prefix、spawn 晚元数据、list 采纳/拒绝/终态/竞态、无四行上限，以及会话行/工作区行/进度条配色、effort 记录、多行对齐与 Avg 24h 滚动窗口。kit 不允许凭空生成合法 opaque engine.ref，因此其透传由源码检查保证；底层 hook 错误会被 kit 包装成引擎错误，测试验证这个真实下游错误的透传和清理。
-
-本地持久源目录为 `/Users/ethan/.claude/local-mods/mods/token-speed`。当前会话执行 `/reload-plugins` 读取更新；后续维护修改持久源，避免直接改 plugins/cache 副本。
+测试保留流透传、单次 next、测量/Unicode/加权平均、失败清理、reset/clear/reload、并发独立桶与生命周期竞态合同，并核验统一代理行、配置 effort 后备、主控/子代理上下文隔离、成功压缩、10 格块状条 80 档视觉映射（0–100 为 81 种可见状态，67/68 同形但数字不同）、配置子代理窗口、80/120/240 列预算、显示宽对齐、UI 隐藏渠道和命令完整渠道。kit 只验证引擎 tree 与合同，不代替终端字体的实际截图验收。

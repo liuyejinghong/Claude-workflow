@@ -9,7 +9,7 @@ const BAND: RenderPropsOf['AbovePrompt'] = { hasSurvey: false, isWorking: true, 
 const DAY = 24 * 60 * 60 * 1000
 const REPO: SessionRepo = { root: '/repos/Claude-workflow', remote: null, internal: false, name: 'liuyejinghong/Claude-workflow' }
 
-interface Setup { usage?: SessionUsage; repo?: SessionRepo | null; root?: string; git?: { exitCode: number; stdout: string } }
+interface Setup { usage?: SessionUsage; repo?: SessionRepo | null; root?: string; git?: { exitCode: number; stdout: string }; model?: string; settings?: Record<string, unknown>; registry?: string; registryRead?: () => void }
 const info = (id: string, status: AgentInfo['status'] = 'running'): AgentInfo => ({ id, status, description: `task ${id}`, type: 'worker' })
 const request = (model = 'codex/gpt-6.1-sol:high', effort?: TurnStepInput['effort'], index = 0): TurnStepInput => ({
   model, index, turnId: 'turn', messageCount: 1, ...(effort === undefined ? {} : { effort }),
@@ -51,11 +51,18 @@ async function finishAt(clock: MockClock, pending: ReturnType<typeof consume>, m
 }
 function setup(on: On, held: Setup = {}, roster: () => Promise<AgentInfo[]> = async () => []): MockClock {
   const clock = mock.clock(on)
+  on('fs.read', async () => { held.registryRead?.(); return { value: held.registry ?? JSON.stringify({ version: 1, models: [], overrides: [
+    { id: 'gpt-6.1-sol', aliases: [], window: 272000, reason: 'Test override' },
+    { id: 'glm-5.3', aliases: [], window: 1000000, reason: 'Test override' },
+    { id: 'glm-5.3-flash', aliases: [], window: 1000000, reason: 'Test override' },
+  ] }) } })
   on('agent.list', async () => ({ value: await roster() }))
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
   on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
   on('command.register', async (_$, e) => ({ value: { command: e.name } }))
   on('turn.complete', async (_$, e) => ({ text: e.answer, usage: e.usage }))
+  if (held.model) { const model = held.model; on('session.model', async () => ({ value: model })) }
+  if (held.settings) { const settings = held.settings; on('settings.read', async () => ({ value: settings })) }
   if (held.usage) { const usage = held.usage; on('session.usage', async () => ({ value: usage })) }
   if (held.repo !== undefined) { const repo = held.repo; on('session.repo', async () => ({ value: repo })) }
   if (held.root) { const root = held.root; on('session.root', async () => ({ value: root })) }
@@ -68,22 +75,32 @@ function setup(on: On, held: Setup = {}, roster: () => Promise<AgentInfo[]> = as
   return clock
 }
 
-test('session line shows effort tier colour and a segmented context bar', OPTIONS, async ($, on) => {
-  const clock = setup(on, { usage: { startedAt: 0, context: { tokens: 122400, window: 272000, percent: 45 }, rateLimits: [] } })
+test('agent line shows effort tier colour and a uniform context meter without duplicate model', OPTIONS, async ($, on) => {
+  const clock = setup(on, { usage: { startedAt: 0, context: { tokens: 122400, window: 272000, percent: 45 }, rateLimits: [] },
+    repo: REPO, git: { exitCode: 0, stdout: 'main\n' } })
   on('turn.step', async function* (_$, e) { await clock.sleep(1000); return result(e) })
   await $.session.start(START)
-  const pending = consume($.turn.step(request(undefined, 'max')))
-  await finishAt(clock, pending, 1000)
-  await clock.advance(750) // Reaches the usage poll cadence at ticks % 4 === 2.
+  await finishAt(clock, consume($.turn.step(request(undefined, 'max'))), 1000)
+  await clock.advance(750)
   expect((await main($)).effort).toBe('max')
+  expect((await main($)).effortSource).toBe('request')
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  const line = await ui.find({ type: 'Text', text: /gpt-6\.1-sol · max/ })
-  expect(line?.text).toMatch('codex/gpt-6.1-sol · max ·')
-  expect(line?.text).toMatch('█████░░░░░ 45%/272k')
-  const filled = (await ui.findAll({ type: 'Text', text: '█' })).filter(node => node.text === '█')
-  expect(filled.map(cell => cell.props.color)).toEqual(['success', 'success', 'success', 'success', 'warning'])
-  const hollow = (await ui.findAll({ type: 'Text', text: '░' })).filter(node => node.text === '░')
-  expect(hollow.map(cell => cell.props.color)).toEqual(Array<string>(5).fill('inactive'))
+  const lines = await ui.findAll({ type: 'Text', text: / · Live / })
+  expect(lines.length).toBe(1)
+  expect(lines[0]?.text).toMatch('gpt-6.1-sol · max · Ctx ')
+  expect(lines[0]?.text).not.toMatch('codex/')
+  expect(lines[0]?.text).toMatch('45%/272k')
+  expect(lines[0]?.text.match(/gpt-6\.1-sol/g)?.length).toBe(1)
+  const fill = await ui.find({ type: 'Text', text: /^█[█▏▎▍▌▋▊▉]*$/ })
+  expect(fill?.props.color).toBe('rate_limit_fill')
+  expect((await ui.find({ type: 'Text', text: /^gpt-6\.1-sol$/ }))?.props.color).toBe('text')
+  expect((await ui.find({ type: 'Text', text: /^⚡ main$/ }))?.props.color).toBe('claude')
+  const meter = (await ui.findAll({ type: 'Text' })).find(node => node.props.backgroundColor === 'rate_limit_empty')
+  expect(meter?.props.backgroundColor).toBe('rate_limit_empty')
+  expect(meter?.text.length).toBe(10)
+  expect(lines[0]?.text).not.toMatch(/[━─]/)
+  expect((await ui.findAll({ type: 'Text', text: /⌂/ })).length).toBe(1)
+  expect((await command($)).text).toMatch('codex/gpt-6.1-sol')
   await ui.unmount()
 })
 
@@ -95,8 +112,11 @@ test('context before the first response renders an empty bar with an em dash', O
   await clock.advance(750)
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   const line = await ui.find({ type: 'Text', text: /gpt-6\.1-sol ·/ })
-  expect(line?.text).toMatch('░░░░░░░░░░ —/1.0M')
-  expect((await ui.findAll({ type: 'Text', text: '█' })).filter(node => node.text === '█')).toEqual([])
+  expect(line?.text).toMatch('—%/1.0M')
+  expect(await ui.find({ type: 'Text', text: /█/ })).toBeUndefined()
+  const meter = (await ui.findAll({ type: 'Text' })).find(node => node.props.backgroundColor === 'rate_limit_empty')
+  expect(meter?.text).toBe(' '.repeat(10))
+  expect(meter?.props.backgroundColor).toBe('rate_limit_empty')
   await ui.unmount()
 })
 
@@ -133,10 +153,12 @@ test('parallel rows align their label and model columns; a lone row stays natura
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   const lines = await ui.findAll({ type: 'Text', text: / · Live / })
   expect(lines.length).toBe(2)
-  expect(lines[0]?.text).toMatch(/⚡ main\s+· codex\/gpt-6\.1-sol\s+· Live/)
-  expect(lines[1]?.text).toMatch('↳ long-ide · glm-5.3')
-  expect(lines[0]?.text.indexOf('·')).toBe(lines[1]?.text.indexOf('·'))
-  expect(lines[0]?.text.indexOf('Live')).toBe(lines[1]?.text.indexOf('Live'))
+  expect(lines[0]?.text).toMatch(/⚡ main\s+· gpt-6\.1-sol\s+· high\s+· Ctx/)
+  expect(lines[1]?.text).toMatch(/↳ long-ide · glm-5\.3\s+· —\s+· Ctx/)
+  const cells = (text: string): number => Array.from(text).reduce((sum, char) => sum + (char === '⚡' ? 2 : 1), 0)
+  const prefix = (text: string, marker: string) => cells(text.slice(0, text.indexOf(marker)))
+  expect(prefix(lines[0]?.text ?? '', '·')).toBe(prefix(lines[1]?.text ?? '', '·'))
+  expect(prefix(lines[0]?.text ?? '', 'Live')).toBe(prefix(lines[1]?.text ?? '', 'Live'))
   await ui.unmount()
   await clock.advance(1750)
   await Promise.all(pending)
@@ -217,18 +239,227 @@ test('migrated v0.2 buckets fall back to the aggregate average until a new reque
   expect(text).toMatch('24h 1 个请求')
 })
 
-test('band budget drops the workspace line before the session line', OPTIONS, async ($, on) => {
+test('band budget preserves one complete agent line and places workspace last', OPTIONS, async ($, on) => {
   const clock = setup(on, { usage: { startedAt: 0, context: { tokens: 122400, window: 272000, percent: 45 }, rateLimits: [] },
     repo: REPO, git: { exitCode: 0, stdout: 'main\n' } })
   on('turn.step', async function* (_$, e) { await clock.sleep(500); return result(e) })
   await $.session.start(START)
   await finishAt(clock, consume($.turn.step(request())), 500)
   await clock.advance(750)
-  for (const [maxRows, session, workspace] of [[2, true, false], [3, true, true], [1, false, false]] as const) {
+  for (const [maxRows, workspace] of [[2, true], [3, true], [1, false]] as const) {
     const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, maxRows } })
-    expect(Boolean(await ui.find({ type: 'Text', text: '45%/272k' }))).toBe(session)
+    expect(Boolean(await ui.find({ type: 'Text', text: '45%/272k' }))).toBe(true)
     expect(Boolean(await ui.find({ type: 'Text', text: '⌂' }))).toBe(workspace)
     expect((await ui.findAll({ type: 'Text', text: / · Live / })).length).toBe(1)
     await ui.unmount()
   }
+})
+
+
+test('reload initializes main model-specific configuration effort and classic applied effort is observed once', OPTIONS, async ($, on) => {
+  setup(on, { model: 'claude-opus-5-5', settings: { effortLevel: 'high',
+    modelSettings: { 'claude-opus-5-5': { effortLevel: 'medium' } }, env: { privateField: 'never-persist' } } })
+  let calls = 0
+  on('classic.PostToolUse', async () => { calls++; return {} })
+  await $.session.start(START)
+  expect((await main($)).effort).toBe('medium')
+  expect((await main($)).effortSource).toBe('configured')
+  expect(JSON.stringify(await state($))).not.toMatch('never-persist')
+  await $.classic.PostToolUse({ tool_name: 'Read', tool_input: {}, tool_response: {}, tool_use_id: 'r', effort: { level: 'max' } })
+  expect(calls).toBe(1)
+  expect((await main($)).effort).toBe('max')
+  expect((await main($)).effortSource).toBe('applied')
+  const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect((await ui.find({ type: 'Text', text: /Live/ }))?.text).toMatch('claude-opus-5-5 · max · Ctx')
+  await ui.unmount()
+})
+
+test('each child keeps latest CLI inputs and unknown denominator; only installed compaction clears it', OPTIONS, async ($, on) => {
+  const clock = setup(on, { usage: { startedAt: 0, context: { tokens: 182240, window: 272000, percent: 67 }, rateLimits: [] } }, async () => [info('child')])
+  on('turn.step', async function* (_$, e) {
+    await clock.sleep(500)
+    const r = result(e)
+    if (r.usage) { r.usage.input_tokens = e.index === 0 ? 1000 : 2000; r.usage.cache_read_input_tokens = 3000; r.usage.cache_creation_input_tokens = 500 }
+    return r
+  })
+  let skip = false
+  const messages = [{ role: 'user' as const, text: 'compacted summary', toolUses: [] }]
+  on('session.compact', async () => skip ? { skip: 'blocked' } : { messages })
+  await $.session.start(START)
+  await finishAt(clock, consume($.turn.step({ ...request('provider/worker:medium', undefined, 0), agentId: 'child' })), 500)
+  expect((await state($)).rows.find(r => r.id === 'child')?.context).toEqual({ tokens: 4500, window: 0, percent: null, source: 'cli-input' })
+  await finishAt(clock, consume($.turn.step({ ...request('provider/worker', undefined, 1), agentId: 'child' })), 500)
+  expect((await state($)).rows.find(r => r.id === 'child')?.context.tokens).toBe(5500)
+  expect((await state($)).rows.find(r => r.id === 'child')?.effort).toBeNull()
+  const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 240 } })
+  expect((await ui.find({ type: 'Text', text: /↳ child/ }))?.text).toMatch('5.5k/?')
+  expect((await ui.find({ type: 'Text', text: /↳ child/ }))?.text).not.toMatch('67%')
+  expect((await main($)).context.percent).toBe(67)
+  await ui.unmount()
+  await $.session.compact({ trigger: 'precompute', agentId: 'child', messages })
+  expect((await state($)).rows.find(r => r.id === 'child')?.context.tokens).toBe(5500)
+  skip = true
+  await $.session.compact({ trigger: 'auto', agentId: 'child', messages })
+  expect((await state($)).rows.find(r => r.id === 'child')?.context.tokens).toBe(5500)
+  skip = false
+  await $.session.compact({ trigger: 'auto', agentId: 'child', messages })
+  expect((await state($)).rows.find(r => r.id === 'child')?.context.tokens).toBeNull()
+  expect((await main($)).context.percent).toBe(67)
+})
+
+test('fixed 10-cell block meter: 67 and 68 share a fill but keep distinct integer labels; aligned rows fit 80/120/240 cells with one unit', OPTIONS, async ($, on) => {
+  const usage: SessionUsage = { startedAt: 0, context: { tokens: 182240, window: 272000, percent: 67 }, rateLimits: [] }
+  const clock = setup(on, { usage, repo: REPO, git: { exitCode: 0, stdout: 'main\n' } }, async () => [info('child')])
+  on('turn.step', async function* (_$, e) { await clock.sleep(500); return result(e) })
+  await $.session.start(START)
+  await finishAt(clock, consume($.turn.step(request(undefined, 'high'))), 500)
+  await finishAt(clock, consume($.turn.step({ ...request('provider/中文🙂', 'medium'), agentId: 'child' })), 500)
+  const cells = (text: string): number => Array.from(text).reduce((sum, char) => sum + (char === '⚡' || char === '🙂' || /[中⽂文]/u.test(char) ? 2 : 1), 0)
+  let compact67 = ''
+  let full67 = ''
+  for (const columns of [80, 120, 240]) {
+    const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: columns } })
+    const lines = await ui.findAll({ type: 'Text', text: / · Live / })
+    expect(lines.length).toBe(2)
+    for (const line of lines) {
+      expect(cells(line.text)).toBeLessThanOrEqual(columns)
+      expect(line.text.match(/tok\/s/g)?.length).toBe(1)
+      expect(line.text).toMatch('Ctx')
+      expect(line.text).toMatch('Avg')
+      expect(line.text).not.toMatch('provider/')
+    }
+    const mainLine = lines[0]?.text ?? ''
+    expect(mainLine).toMatch('67%/272k')
+    if (columns === 240) {
+      full67 = mainLine
+      const meter = (await ui.findAll({ type: 'Text' })).find(node => node.props.backgroundColor === 'rate_limit_empty')
+      expect(meter?.text).toBe('█'.repeat(6) + '▊' + ' '.repeat(3))
+      expect(meter?.text.length).toBe(10)
+      expect(meter?.props.backgroundColor).toBe('rate_limit_empty')
+      expect((await ui.find({ type: 'Text', text: /^█+▊$/ }))?.props.color).toBe('rate_limit_fill')
+    }
+    if (columns === 120) compact67 = mainLine
+    const prefix = (text: string, marker: string) => cells(text.slice(0, text.indexOf(marker)))
+    expect(prefix(mainLine, 'Live')).toBe(prefix(lines[1]?.text ?? '', 'Live'))
+    expect((await ui.find({ type: 'Text', text: 'rest band' }))?.text).toBe('rest band')
+    await ui.unmount()
+  }
+  usage.context.percent = 68
+  await clock.advance(1000)
+  for (const columns of [120, 240]) {
+    const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: columns } })
+    const line = (await ui.findAll({ type: 'Text', text: / · Live / }))[0]?.text ?? ''
+    expect(line).toMatch('68%/272k')
+    expect(line).not.toBe(columns === 120 ? compact67 : full67)
+    if (columns === 240) expect(((await ui.findAll({ type: 'Text' })).find(node => node.props.backgroundColor === 'rate_limit_empty'))?.text).toBe('█'.repeat(6) + '▊' + ' '.repeat(3))
+    await ui.unmount()
+  }
+})
+
+
+test('all integer percentages 0..100 map to 81 visual 10-cell fills; 0/50/100 shapes and rate_limit_fill colour are fixed', OPTIONS, async ($, on) => {
+  const usage: SessionUsage = { startedAt: 0, context: { window: 272000, percent: 0, tokens: 0 }, rateLimits: [] }
+  const clock = setup(on, { usage })
+  on('turn.step', async function* (_$, e) { await clock.sleep(500); return result(e) })
+  await $.session.start(START)
+  await finishAt(clock, consume($.turn.step(request())), 500)
+  const visuals = new Set<string>()
+  for (let percent = 0; percent <= 100; percent++) {
+    usage.context.percent = percent
+    usage.context.tokens = Math.round(272000 * percent / 100)
+    await clock.advance(1000)
+    const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 240 } })
+    const meter = (await ui.findAll({ type: 'Text' })).find(node => node.props.backgroundColor === 'rate_limit_empty')
+    expect(meter?.text.length).toBe(10)
+    expect(meter?.props.backgroundColor).toBe('rate_limit_empty')
+    const text = meter?.text ?? ''
+    expect(text).not.toMatch(/[━─]/)
+    visuals.add(text)
+    if (percent === 0) expect(text).toBe(' '.repeat(10))
+    if (percent === 50) {
+      expect(text).toBe('█'.repeat(5) + ' '.repeat(5))
+      expect((await ui.findAll({ type: 'Text', text: /^█+$/ })).find(node => node.props.color === 'rate_limit_fill')?.text).toBe('█'.repeat(5))
+    }
+    if (percent === 100) {
+      expect(text).toBe('█'.repeat(10))
+      expect((await ui.findAll({ type: 'Text', text: /^█+$/ })).find(node => node.props.color === 'rate_limit_fill')?.text).toBe('█'.repeat(10))
+    }
+    expect((await ui.find({ type: 'Text', text: / · Live / }))?.text).toMatch(`${percent}%/272k`)
+    await ui.unmount()
+  }
+  expect(visuals.size).toBe(81)
+})
+
+test('child windows use only configured model tails; latest inputs, model switches and compaction stay independent', OPTIONS, async ($, on) => {
+  const clock = setup(on, { usage: { startedAt: 0, context: { window: 500000, tokens: 50000, percent: 10 }, rateLimits: [] } }, async () => [info('child')])
+  on('turn.step', async function* (_$, e) {
+    await clock.sleep(500)
+    const r = result(e)
+    if (r.usage) { r.usage.input_tokens = e.index === 3 ? 300000 : 100000; r.usage.cache_read_input_tokens = 25000; r.usage.cache_creation_input_tokens = 11000 }
+    return r
+  })
+  const messages = [{ role: 'user' as const, text: 'summary', toolUses: [] }]
+  on('session.compact', async () => ({ messages }))
+  await $.session.start(START)
+  const sol = consume($.turn.step({ ...request('codex/gpt-6.1-sol:high'), agentId: 'child' }))
+  await clock.settle()
+  expect((await state($)).rows.find(r => r.id === 'child')?.context).toEqual({ tokens: null, window: 272000, percent: null, source: 'cli-input-window-config' })
+  await clock.advance(500); await sol
+  expect((await state($)).rows.find(r => r.id === 'child')?.context).toEqual({ tokens: 136000, window: 272000, percent: 50, source: 'cli-input-window-config' })
+  for (const model of ['zcode/GLM-5.3[1m]', 'zcode/GLM-5.3-Flash:max[1m]']) {
+    const pending = consume($.turn.step({ ...request(model, undefined, 1), agentId: 'child' }))
+    await clock.settle()
+    expect((await state($)).rows.find(r => r.id === 'child')?.context.percent).toBeNull()
+    await clock.advance(500); await pending
+    expect((await state($)).rows.find(r => r.id === 'child')?.context).toEqual({ tokens: 136000, window: 1000000, percent: 14, source: 'cli-input-window-config' })
+  }
+  const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 240 } })
+  expect((await ui.find({ type: 'Text', text: /↳ child/ }))?.text).toMatch('14%/1.0M')
+  expect((await main($)).context.window).toBe(500000)
+  expect((await command($)).text).toMatch('cli-input-window-config')
+  await ui.unmount()
+  await $.session.compact({ trigger: 'auto', agentId: 'child', messages })
+  expect((await state($)).rows.find(r => r.id === 'child')?.context).toEqual({ tokens: null, window: 1000000, percent: null, source: 'cli-input-window-config' })
+  await finishAt(clock, consume($.turn.step({ ...request('codex/gpt-6.1-sol', undefined, 3), agentId: 'child' })), 500)
+  expect((await state($)).rows.find(r => r.id === 'child')?.context.percent).toBe(124)
+  await finishAt(clock, consume($.turn.step({ ...request('provider/other', undefined, 4), agentId: 'child' })), 500)
+  expect((await state($)).rows.find(r => r.id === 'child')?.context).toEqual({ tokens: 136000, window: 0, percent: null, source: 'cli-input' })
+})
+
+
+test('packaged registry loads once per module and official default follows each child latest input while main runtime wins', OPTIONS, async ($, on) => {
+  const registry = JSON.stringify({ version: 1, models: [{ id: 'verified-child', aliases: ['verified-alias'], defaultWindow: 200000,
+    maxWindow: 1000000, sourceURL: 'https://docs.example.com/models/verified-child', date: '2026-10-09' }],
+    overrides: [{ id: 'gpt-6.1-sol', aliases: [], window: 272000, reason: 'Confirmed cap' }] })
+  let reads = 0
+  const clock = setup(on, { registry, registryRead: () => { reads++ }, model: 'codex/gpt-6.1-sol', usage: { startedAt: 0, context: { tokens: 50000, window: 500000, percent: 10 }, rateLimits: [] } })
+  on('turn.step', async function* (_$, e) {
+    await clock.sleep(500)
+    const r = result(e)
+    if (r.usage) r.usage.input_tokens = e.index === 0 ? 100000 : 120000
+    return r
+  })
+  await $.session.start(START)
+  await $.session.start(START)
+  expect(reads).toBe(1)
+  await finishAt(clock, consume($.turn.step({ ...request('provider/verified-alias[1m]', undefined, 0), agentId: 'child' })), 500)
+  expect((await state($)).rows.find(r => r.id === 'child')?.context).toEqual({ tokens: 100000, window: 200000, percent: 50, source: 'cli-input-official-default' })
+  await finishAt(clock, consume($.turn.step({ ...request('provider/verified-alias', undefined, 1), agentId: 'child' })), 500)
+  expect((await state($)).rows.find(r => r.id === 'child')?.context.tokens).toBe(120000)
+  expect((await state($)).rows.find(r => r.id === 'child')?.context.percent).toBe(60)
+  expect((await main($)).context.window).toBe(500000)
+  const output = (await command($)).text
+  expect(output).toMatch('context registry v1')
+  expect(output).toMatch('https://docs.example.com/models/verified-child')
+  expect(output).toMatch('checked 2026-10-09')
+  expect(reads).toBe(1)
+})
+
+test('bad packaged registry is observational and preserves confirmed CLI overrides', OPTIONS, async ($, on) => {
+  const clock = setup(on, { registry: '{' })
+  on('turn.step', async function* (_$, e) { await clock.sleep(500); return result(e) })
+  await $.session.start(START)
+  await finishAt(clock, consume($.turn.step({ ...request('codex/gpt-6.1-sol'), agentId: 'child' })), 500)
+  expect((await state($)).rows.find(r => r.id === 'child')?.context.window).toBe(272000)
+  expect((await command($)).text).toMatch('load failed: confirmed overrides only')
 })

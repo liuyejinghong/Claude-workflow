@@ -41,6 +41,11 @@ async function consume(stream: HookStream<TurnStepChunk, TurnStepResult>) {
 }
 function setup(on: On, list: () => Promise<AgentInfo[]> = async () => []): MockClock {
   const clock = mock.clock(on)
+  on('fs.read', async () => ({ value: JSON.stringify({ version: 1, models: [], overrides: [
+    { id: 'gpt-6.1-sol', aliases: [], window: 272000, reason: 'Test override' },
+    { id: 'glm-5.3', aliases: [], window: 1000000, reason: 'Test override' },
+    { id: 'glm-5.3-flash', aliases: [], window: 1000000, reason: 'Test override' },
+  ] }) }))
   on('agent.list', async () => ({ value: await list() }))
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
   on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
@@ -83,7 +88,7 @@ test('main plus three simultaneous children have four live rows in all views and
     const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, view } })
     const lines = await ui.findAll({ type: 'Text', text: /Live/ })
     expect(lines.length).toBe(4)
-    expect(lines[0]?.text).toMatch(/⚡ main\s+· codex\/gpt-6\.1-sol/)
+    expect(lines[0]?.text).toMatch(/⚡ main\s+· gpt-6\.1-sol/)
     expect(lines[1]?.text).toMatch('↳ abcdefg1')
     expect(lines[2]?.text).toMatch('↳ abcdefg2')
     expect((await ui.find({ type: 'Text', text: 'other mod' }))?.text).toBe('other mod')
@@ -119,7 +124,8 @@ test('canonical request models clean repeated suffixes, keep proven prefix and i
   expect(main.models.some(b => b.model.includes('zhipu'))).toBe(false)
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 80 } })
   const line = await ui.find({ type: 'Text', text: /Live/ })
-  expect(line?.text).toMatch('main · codex/gpt-6.1-sol · Live')
+  expect(line?.text).toMatch(/main · gpt-6\.1-sol · max · Ctx/)
+  expect(line?.text).not.toMatch('codex/')
   expect(line?.text).toMatch('Avg')
   expect(line?.text).not.toMatch('Last ')
   await ui.unmount()
@@ -135,7 +141,8 @@ test('already-running agents are adopted with unknown model, tool gaps retain ro
   expect((await state($)).rows.some(r => r.id === 'idle-teammate')).toBe(false)
   let ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect((await ui.findAll({ type: 'Text', text: /Live/ })).length).toBe(2)
-  expect((await ui.find({ type: 'Text', text: /↳/ }))?.text).toMatch(/unknown · Live\s+—/)
+  expect((await ui.find({ type: 'Text', text: /↳/ }))?.text).toMatch(/unknown · —\s+· Ctx/)
+  expect((await ui.find({ type: 'Text', text: /↳/ }))?.text).toMatch(/Live\s+—/)
   await ui.unmount()
   const pending = consume($.turn.step(request('already-running', 'glm-5.3[1m]')))
   await clock.settle(); await clock.advance(500); await pending
@@ -255,9 +262,10 @@ test('hot reload clears stale active per loop, retains every bucket and adopts r
     const oldRow = (id: string): TokenSpeedRow => ({ id, description: '', running: true, seen: true,
       currentModel: 'codex/gpt-6.1-sol', models: [{ model: 'codex/gpt-6.1-sol', outputTokens: id === 'main' ? 100 : 200,
         durationMs: 2000, samples: 1, lastApi: 50 }], active: { id: `stale-${id}`, turnId: 'old', model: 'codex/gpt-6.1-sol', startedAt: 0 },
-      live: 100, status: 'streaming', turnId: 'old', revision: 4, effort: null })
+      live: 100, status: 'streaming', turnId: 'old', revision: 4, effort: null, effortSource: 'unknown',
+      context: { tokens: null, window: 0, percent: null, source: 'unknown' } })
     return next({ ...e, value: { version: 2, rows: [oldRow('main'), oldRow('old-child')],
-      session: { context: { tokens: null, window: 0, percent: null }, workspace: null } } })
+      session: { context: { tokens: null, window: 0, percent: null, source: 'unknown' }, workspace: null } } })
   })
   await $.session.start(START)
   await $.session.start(START)

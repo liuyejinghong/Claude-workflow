@@ -52,6 +52,11 @@ async function command($: Engine, args = '', name = 'tok-speed') {
 }
 function setup(on: On, roster: () => Promise<AgentInfo[]> = async () => []): MockClock {
   const clock = mock.clock(on)
+  on('fs.read', async () => ({ value: JSON.stringify({ version: 1, models: [], overrides: [
+    { id: 'gpt-6.1-sol', aliases: [], window: 272000, reason: 'Test override' },
+    { id: 'glm-5.3', aliases: [], window: 1000000, reason: 'Test override' },
+    { id: 'glm-5.3-flash', aliases: [], window: 1000000, reason: 'Test override' },
+  ] }) }))
   on('agent.list', async () => ({ value: await roster() }))
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
   on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
@@ -278,13 +283,15 @@ test('UI preserves downstream drawing, hides during survey/no rows, commands han
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'token-speed', surface, component: 'AbovePrompt', props: BAND })
     const line = await ui.find({ type: 'Text', text: / · Last / })
-    expect(line?.text).toMatch('Last 100.0 tok/s')
+    expect(line?.text).toMatch('Last 100.0')
+    expect(line?.text?.match(/tok\/s/g)?.length).toBe(1)
     expect(line?.props.wrap).toBe('truncate-end')
     expect((await ui.find({ type: 'Text', text: 'underlying band' }))?.text).toBe('underlying band')
     await ui.unmount()
     const narrow = await $.ui.mount({ plugin: 'token-speed', surface, component: 'AbovePrompt', props: { ...BAND, bodyColumns: 80 } })
     const shortLine = await narrow.find({ type: 'Text', text: / · Avg / })
-    expect(shortLine?.text).toMatch('main · requested · Live —')
+    expect(shortLine?.text).toMatch('main · requested · — · Ctx')
+    expect(shortLine?.text).toMatch(/Live\s+—/)
     expect(shortLine?.text).toMatch('Avg 100.0 tok/s')
     expect(shortLine?.text).not.toMatch('Last ')
     await narrow.unmount()

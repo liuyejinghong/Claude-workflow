@@ -45,15 +45,20 @@ export type TokenSpeedRow = {
   turnId: string | null
   /** Lifecycle guard for asynchronously returned roster snapshots. */
   revision: number
-  /** The request's effort as turn.step reported it, absent or invalid parsed to null. */
+  /** Observed request/applied effort, or an explicit configuration fallback. */
   effort: TokenSpeedEffort | null
+  effortSource: 'configured' | 'request' | 'applied' | 'unknown'
+  /** Each loop owns its latest reading; child windows are explicit configuration. */
+  context: TokenSpeedContextInfo
 }
 
 export type TokenSpeedContextInfo = {
-  /** Last response's input tokens (status line total_input_tokens); null before one. */
+  /** Last response's uncached + cache-read + cache-written inputs, never a turn sum. */
   tokens: number | null
+  /** Zero means unknown, never a guessed model/context cap. */
   window: number
   percent: number | null
+  source: 'session' | 'cli-input' | 'cli-input-window-config' | 'cli-input-official-default' | 'cli-input-official-capacity' | 'unknown'
 }
 
 export type TokenSpeedWorkspace = { name: string; branch: string | null }
