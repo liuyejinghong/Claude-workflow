@@ -75,6 +75,7 @@ Claude 保持方案与最终验收的责任，并为复杂或高风险改动安�
 - [Haiku 与 Flash 的分工证据](docs/haiku-vs-glm-flash.md)：速度观察、额度、测量结果及适用范围。
 - [常驻规则模板](templates/CLAUDE.md.snippet)：合并到全局 `CLAUDE.md` 的委托规则。
 - [Workflow 示例](examples/workflow-smoke-test.js)：在 Workflow 运行时使用，需单独授权执行，不能直接作为普通 Node.js 脚本运行。
+- [Mods](mods/README.md)：可独立安装的 Claude Code mods（当前为 token-speed），不依赖 Magpie 或模型上游订阅。
 - [更新记录](CHANGELOG.md)与[版本文件](VERSION)。
 - [Claude Code 官方 subagent 文档](https://code.claude.com/docs/en/sub-agents)。
 
