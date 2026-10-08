@@ -17,9 +17,11 @@ cp -R "$SRC/skills/multi-model-orchestration" "$s" && echo "skill  → $s"
 
 cat <<MSG
 
-完成。接下来：
-  1. 按 examples/cpa-config.example.yaml 在 CPA 中配置 GLM 上游（GPT 需在 CPA 中完成 Codex 登录）
-  2. 把 templates/CLAUDE.md.snippet 合并进 $DEST/CLAUDE.md
-  3. 运行 scripts/verify.sh 检查模型与推理强度
-  4. 重启 Claude Code（claude --continue 可保留对话）
+完成：已同步 5 个 agent 与编排 skill，未修改 settings 或上游配置。接下来：
+  1. 按 README 确认 Magpie 路由；Haiku 可选，需要 OpenCode Go。CPA 配置示例未经本次实测。
+  2. 把 templates/CLAUDE.md.snippet 合并进 $DEST/CLAUDE.md，保留其他章节；重载常驻规则。
+  3. 运行 scripts/verify.sh 仅检查模型列表；显式 --smoke 才消耗 Haiku 生成额度验证工具往返。
+  4. 当前 GPT 使用 codex/...:high（272k、无 [1m]）；GLM 与 Haiku 使用 [1m]，Haiku 为 :medium[1m]。
+  5. 现有 agents 目录变化通常几秒后生效；若当前会话未识别新 agent，claude --continue 重启保留对话。
+  分工与额度证据见 README.md 和 docs/haiku-vs-glm-flash.md。
 MSG
