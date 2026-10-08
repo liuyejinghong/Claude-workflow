@@ -2,3 +2,4 @@
 *.key
 *.bak
 .DS_Store
+/mods/*/.claude-plugin/types/
