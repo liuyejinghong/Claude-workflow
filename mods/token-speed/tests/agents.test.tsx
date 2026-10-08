@@ -83,7 +83,7 @@ test('main plus three simultaneous children have four live rows in all views and
     const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, view } })
     const lines = await ui.findAll({ type: 'Text', text: /Live/ })
     expect(lines.length).toBe(4)
-    expect(lines[0]?.text).toMatch('⚡ main · codex/gpt-6.1-sol')
+    expect(lines[0]?.text).toMatch(/⚡ main\s+· codex\/gpt-6\.1-sol/)
     expect(lines[1]?.text).toMatch('↳ abcdefg1')
     expect(lines[2]?.text).toMatch('↳ abcdefg2')
     expect((await ui.find({ type: 'Text', text: 'other mod' }))?.text).toBe('other mod')
@@ -99,7 +99,7 @@ test('main plus three simultaneous children have four live rows in all views and
   await clock.settle()
   await clock.advance(3000)
   await more
-  expect((await loop($, ids[1])).models).toEqual([{ model: 'codex/gpt-6.1-sol', outputTokens: 400, durationMs: 5000, samples: 2, lastApi: 100 }])
+  expect((await loop($, ids[1])).models).toMatchObject([{ model: 'codex/gpt-6.1-sol', outputTokens: 400, durationMs: 5000, samples: 2, lastApi: 100 }])
   expect((await loop($, ids[0])).models[0]?.durationMs).toBe(2000)
 })
 
@@ -120,8 +120,8 @@ test('canonical request models clean repeated suffixes, keep proven prefix and i
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 80 } })
   const line = await ui.find({ type: 'Text', text: /Live/ })
   expect(line?.text).toMatch('main · codex/gpt-6.1-sol · Live')
-  expect(line?.text).toMatch('Avg(API)')
-  expect(line?.text).not.toMatch('Last(API)')
+  expect(line?.text).toMatch('Avg')
+  expect(line?.text).not.toMatch('Last ')
   await ui.unmount()
 })
 
@@ -135,7 +135,7 @@ test('already-running agents are adopted with unknown model, tool gaps retain ro
   expect((await state($)).rows.some(r => r.id === 'idle-teammate')).toBe(false)
   let ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect((await ui.findAll({ type: 'Text', text: /Live/ })).length).toBe(2)
-  expect((await ui.find({ type: 'Text', text: /↳/ }))?.text).toMatch('unknown · Live —')
+  expect((await ui.find({ type: 'Text', text: /↳/ }))?.text).toMatch(/unknown · Live\s+—/)
   await ui.unmount()
   const pending = consume($.turn.step(request('already-running', 'glm-5.3[1m]')))
   await clock.settle(); await clock.advance(500); await pending
@@ -255,8 +255,9 @@ test('hot reload clears stale active per loop, retains every bucket and adopts r
     const oldRow = (id: string): TokenSpeedRow => ({ id, description: '', running: true, seen: true,
       currentModel: 'codex/gpt-6.1-sol', models: [{ model: 'codex/gpt-6.1-sol', outputTokens: id === 'main' ? 100 : 200,
         durationMs: 2000, samples: 1, lastApi: 50 }], active: { id: `stale-${id}`, turnId: 'old', model: 'codex/gpt-6.1-sol', startedAt: 0 },
-      live: 100, status: 'streaming', turnId: 'old', revision: 4 })
-    return next({ ...e, value: { version: 2, rows: [oldRow('main'), oldRow('old-child')] } })
+      live: 100, status: 'streaming', turnId: 'old', revision: 4, effort: null })
+    return next({ ...e, value: { version: 2, rows: [oldRow('main'), oldRow('old-child')],
+      session: { context: { tokens: null, window: 0, percent: null }, workspace: null } } })
   })
   await $.session.start(START)
   await $.session.start(START)

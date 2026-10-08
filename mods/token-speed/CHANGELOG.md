@@ -1,5 +1,15 @@
 # token-speed Changelog
 
+## 0.3.0
+
+新增会话行、工作区行与多行对齐，Avg 改为 24 小时滚动窗口。对应 tag `token-speed-v0.3.0`。
+
+- 会话行：主控模型 · effort 档位（`turn.step` 事件原样；low/medium/high/xhigh/max 分级配色，数值为 subtle）· 上下文进度条。进度数据来自 `$.session.usage()`（与状态栏同源）：10 格按占用分段变色（前段 success、中段 warning、末段 error，空格 inactive），后接 `百分比/窗口`（272k / 1.0M 风格）；首次响应前显示空条与 `—/窗口`。
+- 工作区行：`项目名 on 分支`——仓库根目录名（`$.session.repo()`）+ 当前分支（经引擎 process API 调用 `git branch --show-current`，只读）；非 git 目录显示会话根目录名，detached HEAD 只显示项目名。约 5 秒刷新，值未变化不写状态。
+- 多行对齐：标签、模型、Live、Last、Avg 各列按可见行最大宽度对齐（数值右对齐），单行不填充。
+- Avg 改口径：由本次会话全程累计改为最近 24 小时滚动窗口内同代理同模型的有效 token 总和 / 有效耗时总和，按请求完成时间戳判窗、出窗即弃；与本地时区无关。迁移自 v0.2 的无时间戳桶在首个新请求前退回全程累计口径。UI 与 `/tok-speed` 的标签由 `Last(API)`/`Avg(API)` 改为 `Last`/`Avg`。
+- 行数预算（AbovePrompt maxRows）不足时优先保留速度行，其次会话行，最后工作区行；宽度不足 110 列省略 Last，不足 90 列省略进度条本体（保留百分比）。
+
 ## 0.2.1
 
 首次 GitHub 发布，对应 tag `token-speed-v0.2.1`。
