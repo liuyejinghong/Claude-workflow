@@ -18,7 +18,7 @@ cp -R "$SRC/skills/multi-model-orchestration" "$s" && echo "skill  → $s"
 cat <<MSG
 
 完成：已同步 5 个 agent 与编排 skill，未修改 settings 或上游配置。接下来：
-  1. 按 README 确认 Magpie 路由；Haiku 可选，需要 OpenCode Go。CPA 配置示例未经本次实测。
+  1. 按 README 和 examples/magpie-routing.md 在 Magpie UI 统一确认上游与路由；Haiku 可选，需要 OpenCode Go。
   2. 把 templates/CLAUDE.md.snippet 合并进 $DEST/CLAUDE.md，保留其他章节；重载常驻规则。
   3. 运行 scripts/verify.sh 仅检查模型列表；显式 --smoke 才消耗 Haiku 生成额度验证工具往返。
   4. 当前 GPT 使用 codex/...:high（272k、无 [1m]）；GLM 与 Haiku 使用 [1m]，Haiku 为 :medium[1m]。

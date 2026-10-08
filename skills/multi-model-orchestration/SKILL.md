@@ -6,25 +6,25 @@ description: >-
 
 # 多模型委托与编排
 
-Claude（主控）负责规划、根因判断、架构决策与最终验收；执行工作委托给外部模型 subagent。当前本机通过 Magpie 路由，CPA 保留为可选路径。**委托是为了省 Claude 额度和并行**；关键结论与最终验收仍由 Claude 做。
+Claude（主控）负责规划、根因判断、架构决策与最终验收；执行工作委托给外部模型 subagent。当前本机通过 Claude Code → Magpie → 各上游路由，上游与模型 routes 统一在 Magpie UI 管理。**委托是为了省 Claude 额度和并行**；关键结论与最终验收仍由 Claude 做。
 
 ## 1. 选哪个模型
 
 | 优先级 | subagent_type | 模型 / 推理 | 额度 | 用途 |
 |---|---|---|---|---|
 | 复杂/高风险 | `gpt-6.1-sol` | GPT-6.1 Sol / high | ChatGPT Pro（与 Astra 共享） | 编程与 computer use 接近 Astra，成本约其 1/5，质量明显强于 GLM-5.3。复杂根因、多模块行为变更、跨语言合同、状态所有权、订单幂等/成交归因/恢复链路等高风险实现与关键审查 |
-| 常规实现 | `glm-5.3` | GLM-5.3 / max | GLM Coding Plan（用户体验近乎无限） | 质量明显低于 Sol。方案与合同已由主控明确、可执行验收的常规实现：局部业务逻辑、已定位根因的局部 bug 修复、测试补充、行为不变重构、多处同类修改，不只是样板；大规模并行 fan-out。不让它独自决定架构或复杂并发/恢复/副作用语义 |
-| 快速小任务 | `haiku-5.5` | Claude Haiku 5.5 / medium | OpenCode Go（有 5 小时/周/月额度） | 优先速度敏感且范围小的文件/调用方/测试入口定位、证据提取、简洁整理、文档同步、按指定命令跑测试及简单明确的低风险修改。只提供证据/线索，不决定架构、交易安全、复杂根因或高风险最终审批；测试结果据实际输出报告，不能编造 |
-| 定位/批量杂活 | `glm-5.3-flash` | GLM-5.3-Flash / max | GLM Coding Plan | 文件/调用方/测试入口定位、日志证据提取、按指定命令跑测试并回报原始结果、文档同步、明确重命名和简单低风险修改；保留高频批量、大输出及大规模 fan-out。只提供证据/线索，不决定架构、交易安全、复杂根因或高风险最终审批；测试结果据实际输出报告，不能编造 |
+| 常规实现 | `glm-5.3` | GLM-5.3 / max | GLM Coding Plan（用户体验近乎无限） | 质量明显低于 Sol。方案与合同已由主控明确、可执行验收且需要更多推演的常规逻辑：局部业务逻辑、已定位根因的局部 bug 修复、测试补充、行为不变重构、多处同类修改，不只是样板；大规模并行 fan-out。不让它独自决定架构或复杂并发/恢复/副作用语义 |
+| 高速低复杂度执行 | `haiku-5.5` | Claude Haiku 5.5 / medium | OpenCode Go（有 5 小时/周/月额度） | 需求清楚、验收直接、低风险、无需复杂推演时优先：文件/调用方/测试入口检索、证据提取、摘要整理/结构化提取、文档同步、指定测试、主控已明确方案的简单实现/局部修复/测试补充、批量同类修改。可落实明确执行任务；复杂根因调查仅供线索，不独自决定架构、复杂根因、并发/恢复/交易/持久化/外部副作用安全或高风险最终审批；测试结果据实际输出报告，不能编造 |
+| 高频批量/规模执行 | `glm-5.3-flash` | GLM-5.3-Flash / max | GLM Coding Plan | 优先持续高频批量、大规模 fan-out 和额度吞吐；也可做文件/调用方/测试入口定位、日志证据提取、摘要整理/结构化提取、按指定命令跑测试并回报原始结果、文档同步、明确重命名和简单低风险修改。复杂根因调查仅供线索，不独自决定架构、复杂根因、并发/恢复/交易/持久化/外部副作用安全或高风险最终审批；测试结果据实际输出报告，不能编造 |
 | 最难 | `gpt-6-astra` | GPT-6 Astra / high | ChatGPT Pro（与 Sol 共享，约 Sol 的 5 倍） | 只在最难的研究级任务（数据分析/模拟/证明）、最长流程 agent 任务、架构第二意见上仍明显领先，不承担常规执行和审查。慢（大任务 15 分钟以上），大项目里易超范围——卡紧范围和验收标准 |
 
-**选择顺序：** 没有"凡有逻辑先派 Sol"的全局默认，按需求明确程度、风险、验收能力分流。典型流程：速度敏感的小范围定位交 Haiku，高频批量或大输出交 Flash → 主控定方案/范围/验收 → 方案已明确的常规实现交 GLM-5.3，复杂/高风险交 6.1 Sol → 独立验收。关键证据由主控/审查者复核，不盲信 Haiku 或 Flash 报告；6.1 Sol 仍不够再用 Astra。新增 Haiku 是速度与额度分工，不是笼统认定它更强或替代 GLM。
+**选择顺序：** 没有"凡有逻辑先派 Sol"的全局默认，按需求明确程度、风险、验收能力分流。主控明确方案/范围/验收后，需求清楚、验收直接、低风险、无需复杂推演且速度优先的任务交 Haiku；不按文件个数或输出长短排除，长输出或批量本身不自动交 Flash。持续高频或规模/额度吞吐优先交 Flash，方案已明确且需要更多推演的常规逻辑交 GLM-5.3，复杂/高风险交 6.1 Sol，随后独立验收。关键证据由主控/审查者复核，不盲信 Haiku 或 Flash 报告；6.1 Sol 仍不够再用 Astra。Haiku 是速度与额度分工，不是笼统认定它更强或替代 GLM。
 
 **Sol 额度护栏：** 6.1 Sol 同时最多约 3 个并行。遇到 ChatGPT 限额/速率错误时不自动降级：高风险任务排队或主控接管；普通低风险任务可显式告知用户后改派 GLM-5.3，不静默降级。
 
-**Go 额度护栏：** OpenCode Go 有 5 小时、周、月额度；遇到 429 或额度耗尽，报告出错的上游及可识别窗口/错误，低风险任务可明确告知用户后转 Flash，高风险不降级。不自动启用 Zen balance 的额外付费。Haiku 超过 100K 输入的计价是较短输入档的 5 倍，优先限制不必要的长上下文。GLM 的"近乎无限"是用户订阅经验，不是服务保证；官方 Flash 在 Coding Plan 的额度是 GLM-5.3 的 3 倍。详见仓库 `docs/haiku-vs-glm-flash.md`（[在线证据文档](https://github.com/liuyejinghong/Claude-workflow/blob/main/docs/haiku-vs-glm-flash.md)）。
+**Go 额度护栏：** OpenCode Go 有 5 小时、周、月额度；遇到 429 或额度耗尽，报告出错的上游及可识别窗口/错误，低风险任务可明确告知用户后转 Flash，高风险不降级。不自动启用 Zen balance 的额外付费。Haiku 超过 100K 输入的计价是较短输入档的 5 倍，优先限制不必要的长上下文。GLM 的"近乎无限"是用户订阅经验，不是服务保证；官方 Flash 在 Coding Plan 的额度是 GLM-5.3 的 3 倍。详见仓库 `docs/haiku-vs-glm-flash.md`（[在线证据文档](https://github.com/liuyejinghong/Claude-workflow/blob/feat/haiku-orchestration/docs/haiku-vs-glm-flash.md)）。
 
-**分工调整（2026-10-01，用户决定）：** 为提高完成速度，取消"凡有逻辑先派 Sol"的全局默认，按需求明确程度、风险与验收能力分流；2026-10-08 增加 Haiku 处理速度敏感的小任务，Flash 继续负责高频批量。
+**分工调整（2026-10-01，用户决定）：** 为提高完成速度，取消"凡有逻辑先派 Sol"的全局默认，按需求明确程度、风险与验收能力分流；2026-10-08 已配置 Haiku，优先高速低复杂度执行，Flash 保留持续高频批量、大规模 fan-out 与额度吞吐优势。
 
 **推理默认：** 2026-09-30 用户指定 6.1 Sol 的主会话与 subagent 默认均为 high，Astra 保持 high，GLM 保持 max；2026-10-08 Haiku 使用已验证的 medium 配置，不贸然降到 low。这是配置选择，不是不同档位的性能比较结论；不设置 effort 上限，用户仍可手选其他档位。
 
@@ -71,7 +71,7 @@ subagent 不继承会话上下文，prompt 必须自包含：
 `agent()` 通过 `agentType` 指定外部模型 subagent（与 Agent tool 同一注册表）：
 
 - 不写 `agentType` 会默认用主会话模型（Claude）——执行类 stage 必须显式指定。
-- 执行 stage 按同样风险路由：方案已明确的常规实现可 `glm-5.3` fan-out（无重叠修改或已授权隔离），速度敏感的小任务用 `haiku-5.5`，高频批量/大输出杂活用 `glm-5.3-flash`；复杂/高风险用 `gpt-6.1-sol`（遵守并行上限）。
+- 执行 stage 按同样风险路由：需求清楚、验收直接、低风险、无需复杂推演且速度优先用 `haiku-5.5`，不按文件个数或输出长短排除，长输出或批量本身不自动交 Flash；持续高频或规模/额度吞吐优先用 `glm-5.3-flash`；方案已明确且需要更多推演的常规逻辑可 `glm-5.3` fan-out（无重叠修改或已授权隔离）；复杂/高风险用 `gpt-6.1-sol`（遵守并行上限）。
 - 审查 stage 不逐结果强制 Sol fan-out：低风险由主控验收；需要完整链路审查的功能，多个子任务集成后做一次 Sol 关键审查。
 - `gpt-6-astra` 不进 fan-out，只用于单个最难的 stage。
 - 裁决、综合、最终验收 stage：不写 `agentType`，由 Claude 执行。
@@ -90,8 +90,8 @@ Workflow 运行时示例见仓库 `examples/workflow-smoke-test.js`；它使用�
 
 ## 6. 基础设施备注
 
-- 当前本机链路为 Claude Code → Magpie（`ANTHROPIC_BASE_URL`，本机 `http://127.0.0.1:3425`）→ 各上游；Haiku 上游是 OpenCode Go。CPA（CLIProxyAPI）保留为可选路径，其示例不等于本次已验证配置。
-- 当前 Magpie 请求模型：`codex/gpt-6.1-sol:high`、`codex/gpt-6-astra:high`、`opencode-go/claude-haiku-5-5:medium`。这些具名路由已实际冒烟；原 CPA 的 `gpt-6.1-sol(high)` / `gpt-6-astra(high)` 在当前 Magpie 返回 404，不能混用。可选 CPA 使用括号 effort 后缀，具体支持随版本/配置而异，须验证实际路由。
-- GLM 的裸名 `glm-5.3` / `glm-5.3-flash` 在当前 Magpie 已验证兼容，保持现有定义与 max 默认。CPA 的 Claude 协议没有 max 档，不给 GLM 加 `(max)`，避免被映射成智谱不认的 xhigh。
-- Claude Code 对外部模型报 `unrecognized_model` 属正常警告。GLM 与 Haiku 原生 1M，agent 的 `[1m]` 声明 1M 模型窗口，客户端剥离窗口后缀；Haiku 定义为 `opencode-go/claude-haiku-5-5:medium[1m]`。实际压缩阈值仍受现有全局配置影响，包括当前 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=272000`；没有做 1M 请求压力测试。GPT 不加 `[1m]`，保留现有 `CLAUDE_CODE_MAX_CONTEXT_TOKENS=272000`（Sol/Astra 订阅通道窗口 272k）。窗口/压缩配置不拦截过长请求；给 Sol/Astra 派审查时要求分段读大 diff。不把 Magpie 的 `:medium` 语法视为所有 CPA 版本都支持。
+- 当前本机链路为 Claude Code → Magpie（`ANTHROPIC_BASE_URL`，本机 `http://127.0.0.1:3425`）→ 各上游；Magpie UI 统一管理已登录的 Codex 订阅上游、现有 GLM 上游和 OpenCode Go。Haiku 的 `opencode-go` provider 使用 Anthropic endpoint `https://opencode.ai/zen/go`。
+- 当前 Magpie 请求模型：`codex/gpt-6.1-sol:high`、`codex/gpt-6-astra:high`、`opencode-go/claude-haiku-5-5:medium`。这些具名路由已实际冒烟，GPT 与 Haiku 使用冒号 effort。
+- GLM 的裸名 `glm-5.3` / `glm-5.3-flash` 在当前 Magpie 已验证兼容，保持现有定义与 max 默认。
+- Claude Code 对外部模型报 `unrecognized_model` 属正常警告。GLM 与 Haiku 原生 1M，agent 的 `[1m]` 声明 1M 模型窗口，客户端剥离窗口后缀；Haiku 定义为 `opencode-go/claude-haiku-5-5:medium[1m]`。实际压缩阈值仍受现有全局配置影响，包括当前 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=272000`；没有做 1M 请求压力测试。GPT 不加 `[1m]`，保留现有 `CLAUDE_CODE_MAX_CONTEXT_TOKENS=272000`（Sol/Astra 订阅通道窗口 272k）。窗口/压缩配置不拦截过长请求；给 Sol/Astra 派审查时要求分段读大 diff。
 - [Claude Code 官方 subagents 文档](https://code.claude.com/docs/en/sub-agents)说明：已存在的 `~/.claude/agents/` 目录变化会在几秒后用于后续委托；首次创建目录、add-dir 或禁用 slash commands 等情况需重启。CLAUDE.md 规则修改需重载；若当前会话工具清单尚未识别新 agent，使用 `claude --continue` 重启并保留对话。
