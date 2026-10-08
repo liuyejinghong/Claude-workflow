@@ -27,6 +27,9 @@ CPA (CLIProxyAPI) ── 按模型名分流 ──┬─ claude-*          → C
 | `examples/cpa-config.example.yaml` | CPA 的 GLM 上游配置示例 |
 | `examples/workflow-smoke-test.js` | Workflow 路由到外部模型的最小可运行示例 |
 | `scripts/verify.sh` | 检查 CPA 模型列表与推理强度后缀是否生效 |
+| `mods/token-speed/` | token-speed 0.2.1：主控与活跃子代理的输出速率 mod |
+
+独立的 Claude Code mods 可按 [mods 安装说明](mods/README.md) 安装；它们不需要 CPA、ChatGPT 或 GLM 订阅。
 
 ## 分工
 
