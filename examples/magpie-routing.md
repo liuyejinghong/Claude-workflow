@@ -11,7 +11,10 @@
 | `glm-5.3` | `glm-5.3` | `glm-5.3[1m]` | max |
 | `glm-5.3-flash` | `glm-5.3-flash` | `glm-5.3-flash[1m]` | max |
 | `haiku-5.5` | `opencode-go/claude-haiku-5-5:medium` | `opencode-go/claude-haiku-5-5:medium[1m]` | medium |
+| `gemini-3.8-flash`（可选） | `commandcode/google/gemini-3.8-flash` | `commandcode/google/gemini-3.8-flash` | 未指定，未核验 |
 
 GPT 与 Haiku 使用冒号 effort，GLM 保持兼容裸名。`[1m]` 是 Claude Code 的窗口声明，由客户端剥离，不属于 Magpie 请求 route。
+
+**Gemini（可选）：** 上游为 Command Code（`commandcode` provider），需要你自己在 Magpie UI 中配置凭据与 route；仓库不包含也不应写入任何用户凭据。该路由已完成连通与工具调用验证，配额未核验；实际可用性取决于各自上游配置与额度。未配置该路由时 `gemini-3.8-flash` 子代理不可用，不影响其他五个 agent。Gemini 上游单次输出上限最高 65536，若 `CLAUDE_CODE_MAX_OUTPUT_TOKENS` 设置更高会报 400，见[编排手册](../skills/multi-model-orchestration/SKILL.md)中的说明。
 
 接入后的检查方式见 [README](../README.md#安装与验证)。

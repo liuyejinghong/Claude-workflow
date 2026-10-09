@@ -78,6 +78,11 @@ try:
             missing.append(label)
         else:
             print(f"  OK {label}: {found}")
+    gemini = "commandcode/google/gemini-3.8-flash"
+    if gemini in ids:
+        print(f"  OK 可选 Gemini 3.8 Flash: {gemini}")
+    else:
+        print(f"  未接入可选 Gemini（{gemini}）；不影响其他 agent 与通过结果")
     if missing:
         raise SystemExit(1)
 except (OSError, ValueError, TypeError) as error:

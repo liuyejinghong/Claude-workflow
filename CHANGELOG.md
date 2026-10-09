@@ -2,6 +2,14 @@
 
 本文件记录编排仓库的版本变化。版本号指本仓库，不对应模型版本。各 mod 使用独立版本，其详细变化记在对应 mod 的 CHANGELOG 中；此处的 "Mod 发布" 条目只作索引，发布 mod 不改变编排仓库版本。
 
+## 0.3.0 - 2026-10-09
+
+- 新增可选专项代理 `gemini-3.8-flash`（Magpie 路由 `commandcode/google/gemini-3.8-flash`）：仅用于文案优化/润色（可直接编辑指定的纯文字）与 UI 审美反馈（只反馈）；开放 Read/Glob/Grep/Edit/Write，仅限指定纯文字编辑；不参与工程实现、根因、架构或并发/恢复/交易/持久化审查。未接入时不影响其他五个 agent。
+- 编排手册、CLAUDE.md 模板与 `examples/magpie-routing.md` 同步 Gemini 角色与路由说明；上游为 Command Code，凭据与 route 需自行在 Magpie 配置，配额未核验。
+- Gemini 上游单次输出上限最高 65536。若 `CLAUDE_CODE_MAX_OUTPUT_TOKENS` 高于该值会报 400，需在使用会话中自行调至不超过 65536；安装脚本不会修改该设置。
+- README 重写，突出 token-speed mod；mod 详细变化见其 CHANGELOG，不改变 mod 版本。
+- `scripts/verify.sh` 模型列表新增可选 Gemini 检查：存在则输出 OK，缺失仅提示未接入，不影响退出码；默认仍不发送生成请求。
+
 ## Mod 发布：token-speed 0.3.1 - 2026-10-09
 
 - 每个代理一行显示模型、effort、上下文与输出速率，主控在前，工作区行在最后；速率数字按终端显示宽度对齐。
