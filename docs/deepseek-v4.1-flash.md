@@ -6,7 +6,7 @@
 
 ## 路由与渠道
 
-agent 使用 Magpie 的**聚合智能路由** `group/deepseek-v4.1-flash`（本机 `/v1/models` 已确认暴露），该组在 OpenCode Go 与 Command Code 之间自行选择渠道，因此主控不按渠道路由、也不应假设请求落在哪一边。已实测该组的 Anthropic Messages 工具往返：`tool_use → tool_result → end_turn` 通过。
+`deepseek-v4.1-flash` 与 `haiku-5.5` 都使用 Magpie 的**聚合智能路由**（`group/deepseek-v4.1-flash`、`group/auto-claude-haiku-5-5:medium`，本机 `/v1/models` 已确认暴露），两个组都在 OpenCode Go 与 Command Code 之间自行选择渠道，因此主控不按渠道路由、也不应假设请求落在哪一边。已实测该组的 Anthropic Messages 工具往返：`tool_use → tool_result → end_turn` 通过。
 
 ## 订阅额度与计费
 

@@ -17,7 +17,7 @@ Haiku 用于高速低复杂度执行：需求清楚、验收直接、低风险�
 
 API 标价不能直接当成用户订阅的实际账单。
 
-OpenCode Go 为 $10/月，Go Plus 为 $40/月；Haiku 对应的月额度按 API 价格计值分别是 $15 / $60，5 小时窗口为月额度的 20%，周窗口为 50%，月窗口为 100%。它不是无限额度，也不是固定请求数；不能自动启用 Zen 余额补充额度。
+OpenCode Go 为 $10/月，Go Plus 为 $40/月；Haiku 对应的月额度按 API 价格计值分别是 $15 / $60，5 小时窗口为月额度的 20%，周窗口为 50%，月窗口为 100%。注意 agent 现在走聚合组，请求也可能落到 Command Code（$10/月，Haiku 月额度 $20，$70 共享池），因此该额度不是唯一的计费口径。它不是无限额度，也不是固定请求数；不能自动启用 Zen 余额补充额度。
 
 智谱 Coding Plan 官方给 Flash 的额度是 GLM-5.3 的 3 倍，这不是无限服务承诺。
 
@@ -45,7 +45,7 @@ Max 的智力分数略高、Terminal-Bench 4 持平，High 与 Medium 的智力�
 
 ## 编排与本机验证
 
-已配置具名 `haiku-5.5` agent，默认 medium；模型为 `opencode-go/claude-haiku-5-5:medium[1m]`，经 Claude Code → Magpie → OpenCode Go 路由。
+已配置具名 `haiku-5.5` agent，默认 medium；模型为 `group/auto-claude-haiku-5-5:medium[1m]`，经 Claude Code → Magpie 聚合智能路由（在 OpenCode Go 与 Command Code 之间自动选渠道）；`:medium` 后缀已实测被接受。
 
 Haiku 可执行检索/证据提取、摘要整理/结构化提取、文档同步、指定测试、主控已明确方案的简单实现/局部修复/测试补充和批量同类修改。不按文件个数或输出长短排除；低复杂度且速度优先用 Haiku，持续高频、规模或额度吞吐优先用 Flash。
 
