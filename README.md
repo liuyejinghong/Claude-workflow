@@ -1,8 +1,8 @@
 # Claude-workflow
 
-在 Claude Code 中，由 Claude（Opus 5.5）负责规划与验收，把具体执行委托给不同特性的外部模型。同时提供独立的实时观察 mod，在终端清晰掌握主控与各子代理的运行状态。
+Claude Code 提供成熟的原生 subagent、并行执行与后台通知，但 Claude 官方模型并非人人都能订阅。本项目把这套 harness 接到你已有额度的外部模型上，默认用 GPT-6.1 Sol 做主控，没有 GPT 订阅就用 GLM-5.3 替代。同时提供独立的实时观察 mod，在终端清晰掌握主控与各子代理的运行状态。
 
-当前版本：[v0.3.0](VERSION) · [更新记录](CHANGELOG.md) · [MIT License](LICENSE)
+当前版本：[v0.3.1](VERSION) · [更新记录](CHANGELOG.md) · [MIT License](LICENSE)
 
 本项目包含两部分核心能力：
 
@@ -13,22 +13,28 @@
 
 ## 具名 Subagent 分工
 
-系统提供 6 个预配置 subagent。主控负责规划、任务拆解与最终验收，执行阶段按复杂度与风险分流：
+按**模型能力与成本**划分为三层框架：
 
-| Agent | 默认推理 | 适用场景 |
-|---|---|---|
-| `haiku-5.5` | medium | 速度优先、低复杂度任务：检索、文档同步、指定测试，以及方案明确的简单实现/修复与批量同类修改。 |
-| `glm-5.3-flash` | max | 持续高频批量、大规模并行 fan-out 与吞吐优先的任务。 |
-| `glm-5.3` | max | 方案与验收标准已明确、需要更多推演的常规逻辑实现、局部修复与重构。 |
-| `gpt-6.1-sol` | high | 复杂根因、多模块行为变更与高风险实现审查。 |
-| `gpt-6-astra` | high | Sol 不足时的最难研究、长流程任务与架构第二意见。 |
-| `gemini-3.8-flash`（可选） | 未指定 | 专项文案润色与 UI 审美反馈：直接编辑指定文档/UI 纯文字（含 placeholder/title/aria-label），保留事实约束；UI 仅提审美建议，不改工程实现与技术逻辑。 |
+- **主控模型（Controller）**：能力与智能最高、成本也最高。负责规划、任务拆解、根因判断、架构决策与最终验收，也承担最难、最高风险的实现与关键审查。代表：Opus 5.5、GPT-6.1 Sol、GLM-5.3。
+- **力工模型（Worker）**：速度、额度与能力的平衡，承担大部分常规实现、检索、测试补全与批量执行。代表：DeepSeek V4.1 Flash、GLM-5.3-Flash、Claude Haiku 5.5。
+- **审查与专项模型（Review / Specialist）**：不追求通用吞吐，而是在特定维度上明显更可靠。代表：GPT-6 Astra（研究级推理与建模）、Fable 5.1、Gemini 3.8 Flash（文案与 UI 审美）。
+
+本仓库将预配置的 6 个 subagent 按上述三层组织。同一个模型在不同订阅条件下可以落在不同层——例如 GLM-5.3 在同时有 GPT 订阅时承担高质量常规执行，在没有 GPT 订阅时升为主控替代：
+
+| Agent | 层级 | 默认推理 | 适用场景 |
+|---|---|---|---|
+| `gpt-6.1-sol` | 主控（默认主控） | high | 复杂根因、多模块行为变更与高风险实现审查。 |
+| `glm-5.3` | 主控（无 GPT 订阅时的主控替代；有 GPT 订阅时为高质量常规执行） | max | 方案与验收标准已明确、需要更多推演的常规逻辑实现、局部修复与重构。 |
+| `haiku-5.5` | 力工 | medium | 速度优先、低复杂度任务：检索、文档同步、指定测试，以及方案明确的简单实现/修复与批量同类修改。 |
+| `glm-5.3-flash` | 力工 | max | 持续高频批量、大规模并行 fan-out 与吞吐优先的任务。 |
+| `gpt-6-astra` | 审查与专项 | high | Sol 不足时的最难研究、长流程任务与架构第二意见。 |
+| `gemini-3.8-flash`（可选） | 审查与专项 | max | 专项文案润色与 UI 审美反馈：直接编辑指定文档/UI 纯文字（含 placeholder/title/aria-label），保留事实约束；UI 仅提审美建议，不改工程实现与技术逻辑。 |
 
 关于 Haiku 与 Flash 的分工依据见 [Haiku 与 Flash 的分工证据](docs/haiku-vs-glm-flash.md)；编排协议与详细规则见 [多模型编排手册](skills/multi-model-orchestration/SKILL.md)。
 
 ---
 
-## token-speed 0.3.1：会话与代理状态监控
+## token-speed 0.3.2：会话与代理状态监控
 
 [token-speed](mods/token-speed/README.md) 是适用于 Claude Code 的独立 mod（基于 function-hooks，已在 2.1.294 验证）。它在终端输入框上方为每个活跃代理显示单行状态，最后一行显示当前工作区，不依赖 Magpie 或模型订阅：
 
