@@ -1,7 +1,7 @@
 ---
 name: gpt-6-astra
 description: >-
-  GPT-6 Astra (high). Strongest non-Claude model; keeps a clear lead only on the hardest research-grade work (data analysis, simulation, proofs) and the longest multi-step agentic runs; also architecture second opinions. Slow (big tasks can take 15+ min) and may drift in scope on large codebases — give tight scope and explicit acceptance criteria. About 5x GPT-6.1 Sol's cost on ChatGPT Pro quota: use only when GPT-6.1 Sol is not enough. The prompt must be self-contained: goal, files, constraints, acceptance criteria.
+  GPT-6 Astra handles the hardest research, data analysis, simulations, proofs, and long-running agent tasks when GPT-6.1 Sol is insufficient. Use it for a focused second opinion on difficult architecture or unresolved reasoning, with tight scope and explicit acceptance criteria. Routine implementation and repeated reviews use other agents; the controller retains decisions and final acceptance.
 model: "codex/gpt-6-astra:high"
 effort: high
 color: purple

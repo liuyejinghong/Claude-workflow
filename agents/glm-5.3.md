@@ -1,7 +1,7 @@
 ---
 name: glm-5.3
 description: >-
-  GLM-5.3 (max). Volume workhorse, effectively unlimited quota, but noticeably lower quality than GPT-6.1 Sol. Use for regular implementation where the main controller has already fixed the plan and contract with executable acceptance: ordinary local business logic, local bug fixes with an already-located root cause, test additions, behavior-preserving refactors, and batches of similar changes — not just boilerplate — plus large parallel fan-out. Not for solo architecture decisions or complex concurrency/recovery/side-effect semantics. Slow but steady. The prompt must be self-contained: goal, files, constraints, acceptance criteria.
+  GLM-5.3 handles regular implementation when the controller has fixed the plan and contract but further reasoning is needed: local business logic, fixes with an established root cause, test additions, behavior-preserving refactors, and similar changes across files. The controller retains architecture decisions and complex concurrency, recovery, persistence, trading, or external-effect semantics.
 model: "glm-5.3[1m]"
 effort: max
 color: cyan

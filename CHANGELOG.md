@@ -4,12 +4,11 @@
 
 ## 0.4.0 - 2026-10-09
 
-- 新增力工代理 `deepseek-v4.1-flash`（Magpie 聚合智能路由 `group/deepseek-v4.1-flash`，在 OpenCode Go 与 Command Code 间自动选渠道；已实测 Anthropic Messages 工具往返 `tool_use → tool_result → end_turn` 通过）：用于总时长或缓存成本决定结果的任务——大规模并行 fan-out、超大缓存上下文的长会话、高频短条目批量；agentic 编码能力低于 GLM-5.3-Flash，不做多步工具链推演、复杂根因与高风险实现。
-- 力工档明确排序为 GLM-5.3-Flash（默认）> DeepSeek V4.1 Flash（墙钟/长缓存）> Haiku 5.5（短上下文插队），依据为供给可持续 > 单位能力 > 速度。`haiku-5.5` 与 `glm-5.3-flash` 的描述同步补充额度与速度约束：Haiku 额度最紧且 >100K 输入 5 倍计价，GLM-5.3-Flash 为栈内最慢。
-- DeepSeek V4.1 Flash 的额度随聚合路由选中的渠道而不同：OpenCode Go 侧为按模型独立额度（$60/月，5 小时窗口 20%），Command Code 侧为 $70 共享池内的 $60 上限，因此不假设额度独立于其他模型；工作日北京时间 09:00–12:00、14:00–18:00 为高峰约 2 倍价。新增证据文档 `docs/deepseek-v4.1-flash.md`。
-- `scripts/verify.sh` 核心模型列表新增 DeepSeek V4.1 Flash（候选 `group/deepseek-v4.1-flash`、`opencode-go/deepseek-flash`、`commandcode/deepseek/deepseek-v4.1-flash`），缺失将返回失败；Gemini 仍为可选。默认仍不发送生成请求。
-- `haiku-5.5` 与 `deepseek-v4.1-flash` 均改用 Magpie 聚合智能路由（`group/auto-claude-haiku-5-5:medium`、`group/deepseek-v4.1-flash`）；两个组都已实测 Anthropic Messages 工具往返 `tool_use → tool_result → end_turn` 通过，`:medium` 后缀被接受。
-- 未核验：DeepSeek V4.1 Flash 的推理档位与 TTFT 口径，以及 OpenCode Go 的 $60 是否为长期额度（有 4x 促销传闻，官方文档未标注期限）。未做本机性能 A/B 与 1M 压力测试。
+- 新增 `deepseek-v4.1-flash`，现有 7 个具名代理按明确合同与风险分工：GLM-5.3-Flash 为默认低风险批量 worker，DeepSeek 用于快速批量与长上下文，Haiku 用于快速明确的低复杂度任务；GLM-5.3 承担需更多推演的常规实现，Sol 承担复杂或高风险任务，Astra 承担最难任务，Gemini 保留文案/UI 专项边界。
+- `haiku-5.5` 与 `deepseek-v4.1-flash` 使用 Magpie 聚合路由 `group/auto-claude-haiku-5-5:medium`、`group/deepseek-v4.1-flash`。两个组均已通过 Anthropic Messages 工具往返；仅 Haiku 已验证接受 `:medium`，DeepSeek 未测试该后缀。
+- 精简 agent descriptions、常驻规则与按需编排手册，保留自包含 prompt、工具自证、两阶段审查和主控独立验收；选型依据集中在 agent description，路由兼容说明集中在示例。
+- `scripts/verify.sh` 核心模型列表包含 6 个模型，新增 DeepSeek 检查，缺失返回失败；Gemini 仍为可选。默认仅检查模型列表，不发送生成请求。
+- 检查范围：文档 diff 格式、安装与验证脚本语法、默认模型列表验证，以及编排入口的内容与改动范围检查。
 
 ## 0.3.0 - 2026-10-09
 
