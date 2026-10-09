@@ -1,7 +1,7 @@
 ---
 name: multi-model-orchestration
 description: >-
-  Claude 主控 + 外部模型 subagent（GPT-6 Astra / GPT-6.1 Sol / GLM-5.3 / GLM-5.3-Flash / Claude Haiku 5.5 / 可选 Gemini 3.8 Flash 专项）的委托与编排手册。在以下场景使用：需要把写/改代码的任务委托出去、决定用哪个模型、写委托 prompt、审查 subagent 产出、或在 Workflow / ultracode 模式下编排多 agent。
+  Claude 主控 + 外部模型 subagent（GPT-6 Astra / GPT-6.1 Sol / GLM-5.3 / GLM-5.3-Flash / DeepSeek V4.1 Flash / Claude Haiku 5.5 / 可选 Gemini 3.8 Flash 专项）的委托与编排手册。在以下场景使用：需要把写/改代码的任务委托出去、决定用哪个模型、写委托 prompt、审查 subagent 产出、或在 Workflow / ultracode 模式下编排多 agent。
 ---
 
 # 多模型委托与编排
@@ -16,14 +16,15 @@ Claude（主控）负责规划、根因判断、架构决策与最终验收；�
 | 常规实现 | `glm-5.3` | GLM-5.3 / max | GLM Coding Plan（用户体验近乎无限） | 质量明显低于 Sol。方案与合同已由主控明确、可执行验收且需要更多推演的常规逻辑：局部业务逻辑、已定位根因的局部 bug 修复、测试补充、行为不变重构、多处同类修改，不只是样板；大规模并行 fan-out。不让它独自决定架构或复杂并发/恢复/副作用语义 |
 | 高速低复杂度执行 | `haiku-5.5` | Claude Haiku 5.5 / medium | OpenCode Go（有 5 小时/周/月额度） | 需求清楚、验收直接、低风险、无需复杂推演时优先：文件/调用方/测试入口检索、证据提取、摘要整理/结构化提取、文档同步、指定测试、主控已明确方案的简单实现/局部修复/测试补充、批量同类修改。可落实明确执行任务；复杂根因调查仅供线索，不独自决定架构、复杂根因、并发/恢复/交易/持久化/外部副作用安全或高风险最终审批；测试结果据实际输出报告，不能编造 |
 | 高频批量/规模执行 | `glm-5.3-flash` | GLM-5.3-Flash / max | GLM Coding Plan | 优先持续高频批量、大规模 fan-out 和额度吞吐；也可做文件/调用方/测试入口定位、日志证据提取、摘要整理/结构化提取、按指定命令跑测试并回报原始结果、文档同步、明确重命名和简单低风险修改。复杂根因调查仅供线索，不独自决定架构、复杂根因、并发/恢复/交易/持久化/外部副作用安全或高风险最终审批；测试结果据实际输出报告，不能编造 |
+| 墙钟/长缓存批量 | `deepseek-v4.1-flash` | DeepSeek V4.1 Flash（Magpie 路由 `opencode-go/deepseek-flash`，本机 `/v1/models` 已确认暴露） | OpenCode Go 按模型独立额度 $60/月（5 小时窗口 20%＝$12，与 Haiku 的 $15 互不挤占） | 需要总时长或缓存成本决定结果时用：大规模并行 fan-out 需尽快收齐、超大缓存上下文的长会话、高频短条目批量；缓存读 $0.003/M 为栈内最低且无长 prompt 加价，输出吞吐实测最高。agentic 编码低于 GLM-5.3-Flash，不做多步工具链推演、复杂根因或高风险；工作日北京时间 09:00–12:00 与 14:00–18:00 为高峰约 2 倍价，批量尽量错峰。不独自决定架构、复杂根因、并发/恢复/交易/持久化/外部副作用安全或最终高风险审批；测试结果据实际输出报告，不能编造 |
 | 最难 | `gpt-6-astra` | GPT-6 Astra / high | ChatGPT Pro（与 Sol 共享，约 Sol 的 5 倍） | 只在最难的研究级任务（数据分析/模拟/证明）、最长流程 agent 任务、架构第二意见上仍明显领先，不承担常规执行和审查。慢（大任务 15 分钟以上），大项目里易超范围——卡紧范围和验收标准 |
 | 专项文案/UI | `gemini-3.8-flash` | Gemini 3.8 Flash（Magpie 路由 `commandcode/google/gemini-3.8-flash`，已实际验证） | 未单独核验（commandcode provider，额度未确认） | 仅限文案优化/润色（可按主控指定直接保存纯文字修改）与 UI 审美反馈（基于主控提供的图片或页面描述，只反馈）。不参与工程实现、根因、架构、并发/恢复/交易/持久化审查，不做最终质量审批，不取代上表任何模型 |
 
-**选择顺序：** 没有"凡有逻辑先派 Sol"的全局默认，按需求明确程度、风险、验收能力分流。主控明确方案/范围/验收后，需求清楚、验收直接、低风险、无需复杂推演且速度优先的任务交 Haiku；不按文件个数或输出长短排除，长输出或批量本身不自动交 Flash。持续高频或规模/额度吞吐优先交 Flash，方案已明确且需要更多推演的常规逻辑交 GLM-5.3，复杂/高风险交 6.1 Sol，随后独立验收。关键证据由主控/审查者复核，不盲信 Haiku 或 Flash 报告；6.1 Sol 仍不够再用 Astra。Haiku 是速度与额度分工，不是笼统认定它更强或替代 GLM。
+**选择顺序：** 没有"凡有逻辑先派 Sol"的全局默认，按需求明确程度、风险、验收能力分流。主控明确方案/范围/验收后，需求清楚、验收直接、低风险、无需复杂推演且速度优先的任务交 Haiku；不按文件个数或输出长短排除，长输出或批量本身不自动交 Flash。持续高频或规模/额度吞吐优先交 Flash，方案已明确且需要更多推演的常规逻辑交 GLM-5.3，复杂/高风险交 6.1 Sol，随后独立验收。关键证据由主控/审查者复核，不盲信 Haiku 或 Flash 报告；6.1 Sol 仍不够再用 Astra。Haiku 是速度与额度分工，不是笼统认定它更强或替代 GLM。力工档内部按“供给可持续 > 单位能力 > 速度”排序：默认 GLM-5.3-Flash（额度最宽、同档能力最高，代价是慢）；需要总时长或缓存成本决定结果时用 DeepSeek V4.1 Flash；Haiku 只承担短上下文、急着要结果的插队任务。
 
 **Sol 额度护栏：** 6.1 Sol 同时最多约 3 个并行。遇到 ChatGPT 限额/速率错误时不自动降级：高风险任务排队或主控接管；普通低风险任务可显式告知用户后改派 GLM-5.3，不静默降级。
 
-**Go 额度护栏：** OpenCode Go 有 5 小时、周、月额度；遇到 429 或额度耗尽，报告出错的上游及可识别窗口/错误，低风险任务可明确告知用户后转 Flash，高风险不降级。不自动启用 Zen balance 的额外付费。Haiku 超过 100K 输入的计价是较短输入档的 5 倍，优先限制不必要的长上下文。GLM 的"近乎无限"是用户订阅经验，不是服务保证；官方 Flash 在 Coding Plan 的额度是 GLM-5.3 的 3 倍。详见仓库 `docs/haiku-vs-glm-flash.md`（[在线证据文档](https://github.com/liuyejinghong/Claude-workflow/blob/feat/haiku-orchestration/docs/haiku-vs-glm-flash.md)）。
+**Go 额度护栏：** OpenCode Go 有 5 小时、周、月额度；遇到 429 或额度耗尽，报告出错的上游及可识别窗口/错误，低风险任务可明确告知用户后转 Flash，高风险不降级。不自动启用 Zen balance 的额外付费。Haiku 超过 100K 输入的计价是较短输入档的 5 倍，优先限制不必要的长上下文。OpenCode Go 的额度按模型独立计算，Haiku 的 $15 与 DeepSeek V4.1 Flash 的 $60 互不挤占；DeepSeek 在工作日北京时间 09:00–12:00 与 14:00–18:00 为高峰价（约 2 倍），批量任务尽量错峰。GLM 的"近乎无限"是用户订阅经验，不是服务保证；官方 Flash 在 Coding Plan 的额度是 GLM-5.3 的 3 倍。详见仓库 `docs/haiku-vs-glm-flash.md`（[在线证据文档](https://github.com/liuyejinghong/Claude-workflow/blob/feat/haiku-orchestration/docs/haiku-vs-glm-flash.md)）。
 
 **分工调整（2026-10-01，用户决定）：** 为提高完成速度，取消"凡有逻辑先派 Sol"的全局默认，按需求明确程度、风险与验收能力分流；2026-10-08 已配置 Haiku，优先高速低复杂度执行，Flash 保留持续高频批量、大规模 fan-out 与额度吞吐优势。
 

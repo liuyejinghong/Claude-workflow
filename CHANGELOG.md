@@ -2,6 +2,14 @@
 
 本文件记录编排仓库的版本变化。版本号指本仓库，不对应模型版本。各 mod 使用独立版本，其详细变化记在对应 mod 的 CHANGELOG 中；此处的 "Mod 发布" 条目只作索引，发布 mod 不改变编排仓库版本。
 
+## 0.4.0 - 2026-10-09
+
+- 新增力工代理 `deepseek-v4.1-flash`（Magpie 路由 `opencode-go/deepseek-flash`，已在本机 `/v1/models` 确认暴露）：用于总时长或缓存成本决定结果的任务——大规模并行 fan-out、超大缓存上下文的长会话、高频短条目批量；agentic 编码能力低于 GLM-5.3-Flash，不做多步工具链推演、复杂根因与高风险实现。
+- 力工档明确排序为 GLM-5.3-Flash（默认）> DeepSeek V4.1 Flash（墙钟/长缓存）> Haiku 5.5（短上下文插队），依据为供给可持续 > 单位能力 > 速度。`haiku-5.5` 与 `glm-5.3-flash` 的描述同步补充额度与速度约束：Haiku 额度最紧且 >100K 输入 5 倍计价，GLM-5.3-Flash 为栈内最慢。
+- DeepSeek V4.1 Flash 在 OpenCode Go 为按模型独立额度（$60/月，5 小时窗口 20%），与 Haiku 的 $15 互不挤占；工作日北京时间 09:00–12:00、14:00–18:00 为高峰约 2 倍价。新增证据文档 `docs/deepseek-v4.1-flash.md`。
+- `scripts/verify.sh` 核心模型列表新增 DeepSeek V4.1 Flash（候选 `opencode-go/deepseek-flash`、`commandcode/deepseek/deepseek-v4.1-flash`），缺失将返回失败；Gemini 仍为可选。默认仍不发送生成请求。
+- 未核验：DeepSeek V4.1 Flash 的推理档位与 TTFT 口径，以及 OpenCode Go 的 $60 是否为长期额度（有 4x 促销传闻，官方文档未标注期限）。未做本机性能 A/B 与 1M 压力测试。
+
 ## 0.3.0 - 2026-10-09
 
 - 新增可选专项代理 `gemini-3.8-flash`（Magpie 路由 `commandcode/google/gemini-3.8-flash`）：仅用于文案优化/润色（可直接编辑指定的纯文字）与 UI 审美反馈（只反馈）；开放 Read/Glob/Grep/Edit/Write，仅限指定纯文字编辑；不参与工程实现、根因、架构或并发/恢复/交易/持久化审查。未接入时不影响其他五个 agent。

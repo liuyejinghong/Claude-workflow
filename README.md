@@ -1,6 +1,6 @@
 # Claude-workflow
 
-在 Claude Code 中，由 Claude（Opus 5.5）负责规划与验收，把具体执行委托给不同特性的外部模型。同时提供独立的实时观察 mod，在终端清晰掌握主控与各子代理的运行状态。
+Claude Code 提供成熟的原生 subagent、并行执行与后台通知，但 Claude 官方模型并非人人都能订阅。本项目把这套 harness 接到你已有额度的外部模型上，默认用 GPT-6.1 Sol 做主控，没有 GPT 订阅就用 GLM-5.3 替代。同时提供独立的实时观察 mod，在终端清晰掌握主控与各子代理的运行状态。
 
 当前版本：[v0.3.0](VERSION) · [更新记录](CHANGELOG.md) · [MIT License](LICENSE)
 
@@ -13,16 +13,23 @@
 
 ## 具名 Subagent 分工
 
-系统提供 6 个预配置 subagent。主控负责规划、任务拆解与最终验收，执行阶段按复杂度与风险分流：
+按**模型能力与成本**划分为三层框架：
 
-| Agent | 默认推理 | 适用场景 |
-|---|---|---|
-| `haiku-5.5` | medium | 速度优先、低复杂度任务：检索、文档同步、指定测试，以及方案明确的简单实现/修复与批量同类修改。 |
-| `glm-5.3-flash` | max | 持续高频批量、大规模并行 fan-out 与吞吐优先的任务。 |
-| `glm-5.3` | max | 方案与验收标准已明确、需要更多推演的常规逻辑实现、局部修复与重构。 |
-| `gpt-6.1-sol` | high | 复杂根因、多模块行为变更与高风险实现审查。 |
-| `gpt-6-astra` | high | Sol 不足时的最难研究、长流程任务与架构第二意见。 |
-| `gemini-3.8-flash`（可选） | 未指定 | 专项文案润色与 UI 审美反馈：直接编辑指定文档/UI 纯文字（含 placeholder/title/aria-label），保留事实约束；UI 仅提审美建议，不改工程实现与技术逻辑。 |
+- **主控模型（Controller）**：能力与智能最高、成本也最高。负责规划、任务拆解、根因判断、架构决策与最终验收，也承担最难、最高风险的实现与关键审查。代表：Opus 5.5、GPT-6.1 Sol、GLM-5.3。
+- **力工模型（Worker）**：速度、额度与能力的平衡，承担大部分常规实现、检索、测试补全与批量执行。代表：GLM-5.3-Flash、DeepSeek V4.1 Flash、Claude Haiku 5.5；档内按**供给可持续 > 单位能力 > 速度**排序。
+- **审查与专项模型（Review / Specialist）**：不追求通用吞吐，而是在特定维度上明显更可靠。代表：GPT-6 Astra（研究级推理与建模）、Fable 5.1、Gemini 3.8 Flash（文案与 UI 审美）。
+
+本仓库将预配置的 7 个 subagent 按上述三层组织。同一个模型在不同订阅条件下可以落在不同层——例如 GLM-5.3 在同时有 GPT 订阅时承担高质量常规执行，在没有 GPT 订阅时升为主控替代：
+
+| Agent | 层级 | 默认推理 | 适用场景 |
+|---|---|---|---|
+| `gpt-6.1-sol` | 主控（默认主控） | high | 复杂根因、多模块行为变更与高风险实现审查。 |
+| `glm-5.3` | 主控（无 GPT 订阅时的主控替代；有 GPT 订阅时为高质量常规执行） | max | 方案与验收标准已明确、需要更多推演的常规逻辑实现、局部修复与重构。 |
+| `haiku-5.5` | 力工 | medium | 速度优先、低复杂度任务：检索、文档同步、指定测试，以及方案明确的简单实现/修复与批量同类修改。 |
+| `glm-5.3-flash` | 力工 | max | 持续高频批量、大规模并行 fan-out 与吞吐优先的任务。 |
+| `deepseek-v4.1-flash` | 力工 | 未指定（上游 thinking 默认开启） | 总时长或缓存成本决定结果时用：大规模并行 fan-out 需尽快收齐、超大缓存上下文的长会话、高频短条目批量；缓存读最便宜且无长 prompt 加价。agentic 编码低于 GLM-5.3-Flash，不做多步工具链推演、复杂根因与高风险实现。 |
+| `gpt-6-astra` | 审查与专项 | high | Sol 不足时的最难研究、长流程任务与架构第二意见。 |
+| `gemini-3.8-flash`（可选） | 审查与专项 | max | 专项文案润色与 UI 审美反馈：直接编辑指定文档/UI 纯文字（含 placeholder/title/aria-label），保留事实约束；UI 仅提审美建议，不改工程实现与技术逻辑。 |
 
 关于 Haiku 与 Flash 的分工依据见 [Haiku 与 Flash 的分工证据](docs/haiku-vs-glm-flash.md)；编排协议与详细规则见 [多模型编排手册](skills/multi-model-orchestration/SKILL.md)。
 
@@ -73,7 +80,7 @@ cd Claude-workflow
 ./install.sh
 ```
 
-脚本会将 6 个 subagent 定义与编排 skill 安装到 `~/.claude/`（支持通过 `CLAUDE_HOME` 环境变量自定义目录），已有同名文件会自动备份为 `.bak`。脚本不修改 CLI 配置、provider 设置或全局 `CLAUDE.md`，也不安装 mods。
+脚本会将 7 个 subagent 定义与编排 skill 安装到 `~/.claude/`（支持通过 `CLAUDE_HOME` 环境变量自定义目录），已有同名文件会自动备份为 `.bak`。脚本不修改 CLI 配置、provider 设置或全局 `CLAUDE.md`，也不安装 mods。
 
 ### 2. 启用常驻委托规则
 
@@ -89,7 +96,7 @@ cd Claude-workflow
 ./scripts/verify.sh
 ```
 
-- **默认检查**：仅 GET 模型列表，不产生生成请求。必须包含 5 个核心模型（包含 Haiku，缺失将返回失败）；Gemini 为可选（缺失仅提示未接入，不影响脚本通过）。
+- **默认检查**：仅 GET 模型列表，不产生生成请求。必须包含 6 个核心模型（包含 Haiku 与 DeepSeek V4.1 Flash，缺失将返回失败）；Gemini 为可选（缺失仅提示未接入，不影响脚本通过）。
 - **冒烟验证**：执行 `./scripts/verify.sh --smoke` 会实际消耗 Haiku 额度，验证 `tool_use → tool_result → end_turn` 往返调用协议。
 
 ### 4. Gemini 专项输出上限说明
@@ -124,6 +131,7 @@ claude --settings '{"env":{"CLAUDE_CODE_MAX_OUTPUT_TOKENS":"65536"}}'
 - [Magpie 路由配置](examples/magpie-routing.md)：各模型路由 ID、上游要求与接入说明。
 - [多模型编排手册](skills/multi-model-orchestration/SKILL.md)：模型选择策略、两阶段审查流程与委托模板。
 - [Haiku 与 Flash 分工证据](docs/haiku-vs-glm-flash.md)：真实观察、额度限制与吞吐权衡。
+- [DeepSeek V4.1 Flash 力工定位](docs/deepseek-v4.1-flash.md)：额度、峰谷计价与第三方对比数据。
 - [常驻规则模板](templates/CLAUDE.md.snippet)：合并至全局 `CLAUDE.md` 的委托规则片段。
 - [Workflow 冒烟示例](examples/workflow-smoke-test.js)：多 agent 流程示例（需在 Workflow 运行时授权执行，不能作为普通 Node.js 脚本运行）。
 - [Claude Code Mods 索引](mods/README.md) 与 [token-speed 说明](mods/token-speed/README.md)。
