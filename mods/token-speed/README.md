@@ -1,4 +1,4 @@
-# token-speed 0.3.1
+# token-speed 0.3.2
 
 适用于 Claude Code 2.1.294 的 function-hooks mod。在提示框上方，主控与每个活跃子代理各用一行显示模型、effort、上下文与输出速率，工作区放在最后一行。只观察原有请求，不调用额外模型、不引入 tokenizer 或网络请求；分支通过引擎 process API 调用本机 git。
 
@@ -14,9 +14,9 @@
 
 进度条是固定 10 个终端 cell 的短矩形，轨道使用 theme `rate_limit_empty`，整格填充 `█`，尾部使用 `▏▎▍▌▋▊▉` 表示 1/8 cell。共 80 个视觉档位（10 格 × 8 档），因此 0–100 的整数百分点不是每个都有不同的条形：相邻百分点可落在同一档（例如 67% 与 68% 的条形相同，但数字 `67%`、`68%` 不同）。宽屏也不扩展为长条。窄屏可省略条形，数值始终保持整数 1% 精度。填充固定使用 theme `rate_limit_fill`，不随占用变化，没有横向渐变；Ctx 数值用 `text`，未知占用用 `inactive`。未知占用只画轨道空条，并以 `—%` 或 `?` 明确标为未知，不能解释为 0%。
 
-主控上下文来自 `$.session.usage()`，与状态栏同口径，最近响应的 uncached + cache-read + cache-written 输入 tokens 除以窗口；首次响应或成功压缩后无读数显示 `—%/窗口`。子代理输入量来自自己最近一次响应的 CLI usage，不累计多次请求。子代理分母由启动时读取一次的 `data/model-contexts.json` 提供，无联网刷新。优先顺序为实际运行窗口、明确 CLI override、官方默认、未知；官网仅提供容量时明确标为官方 capacity。输入始终取自己最近一次 CLI response，主控仍以 `$.session.usage()` 为准。数据中的官方来源、核验日期和 registry 版本可通过 `/tok-speed` 查看。读取或严格解析失败时，官方表为空，保留已确认的 Sol 272000、GLM-5.3/Flash 1000000 后备，不中断请求。
+主控上下文来自 `$.session.usage()`，与状态栏同口径，最近响应的 uncached + cache-read + cache-written 输入 tokens 除以窗口；首次响应或成功压缩后无读数显示 `—%/窗口`。已知读数不会被打回未知：缺少有效 tokens 的部分读数（窗口相同）与主控模型切换都会沿用上一次已知读数，只有成功压缩（主控）或整会话重置才清空，因此进度条不会在两次轮询之间闪回 `—%`。子代理输入量来自自己最近一次响应的 CLI usage，不累计多次请求。子代理分母由启动时读取一次的 `data/model-contexts.json` 提供，无联网刷新。优先顺序为实际运行窗口、明确 CLI override、官方默认、未知；官网仅提供容量时明确标为官方 capacity。输入始终取自己最近一次 CLI response，主控仍以 `$.session.usage()` 为准。数据中的官方来源、核验日期和 registry 版本可通过 `/tok-speed` 查看。读取或严格解析失败时，官方表为空，保留已确认的 Sol 272000、GLM-5.3/Flash 1000000 后备，不中断请求。
 
-官方记录恰好覆盖 `claude-haiku-5-5`、`claude-opus-5-5`、`claude-sonnet-5-5`（共享输入输出上下文 1M）；`gpt-6.1-sol`、`gpt-6-astra`（Codex 官方默认 272000，max 配置 872000，API 总上下文 1050000/max input 922000 仅元数据）；`glm-5.3`、`glm-5.3-flash`（官网容量 1M，没有独立默认/最大输入声明）。用户 override 独立存放，不混作官方事实。匹配只用去渠道的 canonical 尾名及精确 aliases，不匹配子串，不把 flashx 或未知邻近型号映射到已知型号；不使用动态 `haiku`/`opus`/`sonnet` 别名，不因 `[1m]` 选择官方最大值。来源分别记录为 `cli-input-window-config`、`cli-input-official-default`、`cli-input-official-capacity`。
+官方记录覆盖当前前沿型号，共 24 条（核验日期 2026-10-09）。Anthropic：`claude-haiku-5-5`、`claude-sonnet-5-5`、`claude-opus-5-5`、`claude-fable-5-1`、`claude-fable-5`、`claude-mythos-5-1`、`claude-mythos-5`、`claude-opus-5`、`claude-sonnet-5`、`claude-opus-4-8`、`claude-opus-4-7`、`claude-opus-4-6`、`claude-sonnet-4-6` 为共享输入输出上下文 1M，`claude-haiku-4-5`、`claude-sonnet-4-5` 为 200k。OpenAI：`gpt-6.1-sol`、`gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna` 为 Codex 官方默认 272000 / max 872000，其中前两者另带 API 总上下文 1050000 与 max input 922000 元数据。`glm-5.3`、`glm-5.3-flash`、`deepseek-v4.1-flash`（aliases `deepseek-flash`、`deepseek-v4-flash`）、`deepseek-v4-pro`、`gemini-3.8-flash` 官网只给出容量且未声明默认/最大，按官方 capacity 记录；Gemini 的 1,048,576 是输入上限，输出上限 65,536 单独存在，不是共享窗口。用户 override 独立存放，不混作官方事实。匹配只用去渠道的 canonical 尾名及精确 aliases，不匹配子串，不把未知邻近型号映射到已知型号；不使用动态 `haiku`/`opus`/`sonnet` 别名，不因 `[1m]` 选择官方最大值。来源分别记录为 `cli-input-window-config`、`cli-input-official-default`、`cli-input-official-capacity`。
 
 新增 provider/model 时，只添加具有官方 URL、核验日期和精确型号的记录；未核实的型号保持 unknown，或单独添加有理由的 local override。模型最大上下文不保证路由实际 cap，registry 不把最大值当默认。不复制主控百分比，数值超过窗口可显示超过 100%，只限制条形填充。成功安装的压缩清对应行输入读数，保留已知窗口；precompute 和 skip 不清。
 
@@ -31,10 +31,10 @@ Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.eff
 /plugin install token-speed@claude-workflow-mods
 ```
 
-也可用固定 tag `token-speed-v0.3.1` 获取源文件，并从 checkout 加载：
+也可用固定 tag `token-speed-v0.3.2` 获取源文件，并从 checkout 加载：
 
 ```sh
-git clone --branch token-speed-v0.3.1 https://github.com/liuyejinghong/Claude-workflow.git
+git clone --branch token-speed-v0.3.2 https://github.com/liuyejinghong/Claude-workflow.git
 claude --plugin-dir ./Claude-workflow/mods/token-speed
 ```
 

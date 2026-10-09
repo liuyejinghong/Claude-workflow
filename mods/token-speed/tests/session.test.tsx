@@ -463,3 +463,40 @@ test('bad packaged registry is observational and preserves confirmed CLI overrid
   expect((await state($)).rows.find(r => r.id === 'child')?.context.window).toBe(272000)
   expect((await command($)).text).toMatch('load failed: confirmed overrides only')
 })
+
+test('partial session readings keep the last known main measurement and a model switch never blanks it', OPTIONS, async ($, on) => {
+  const usage: SessionUsage = { startedAt: 0, context: { tokens: 122400, window: 272000, percent: 45 }, rateLimits: [] }
+  let model = 'codex/gpt-6.1-sol'
+  const clock = setup(on, { usage })
+  on('session.model', async () => ({ value: model }))
+  on('turn.step', async function* (_$, e) { await clock.sleep(500); return result(e) })
+  await $.session.start(START)
+  await finishAt(clock, consume($.turn.step(request())), 500)
+  await clock.advance(1000)
+  const known = { tokens: 122400, window: 272000, percent: 45, source: 'session' }
+  expect((await main($)).context).toEqual(known)
+  // A reading that carries the window alone must not erase the known measurement.
+  usage.context.tokens = undefined
+  usage.context.percent = undefined
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual(known)
+  // A later complete reading still lands: the guard never freezes the meter.
+  usage.context.tokens = 184960
+  usage.context.percent = 68
+  await clock.advance(1000)
+  const updated = { tokens: 184960, window: 272000, percent: 68, source: 'session' }
+  expect((await main($)).context).toEqual(updated)
+  // A model switch lands with a partial reading in the same poll: still kept.
+  usage.context.tokens = undefined
+  usage.context.percent = undefined
+  model = 'codex/gpt-6-astra'
+  await clock.advance(1000)
+  expect((await main($)).currentModel).toBe('codex/gpt-6-astra')
+  expect((await main($)).context).toEqual(updated)
+  // A main request under a new model keeps it past the request start.
+  const pending = consume($.turn.step(request('glm-5.3')))
+  await clock.settle()
+  expect((await main($)).context).toEqual(updated)
+  await clock.advance(500)
+  await pending
+})
