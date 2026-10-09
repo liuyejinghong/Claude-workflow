@@ -2,6 +2,14 @@
 
 本文件记录编排仓库的版本变化。版本号指本仓库，不对应模型版本。各 mod 使用独立版本，其详细变化记在对应 mod 的 CHANGELOG 中；此处的 "Mod 发布" 条目只作索引，发布 mod 不改变编排仓库版本。
 
+## 0.4.0 - 2026-10-09
+
+- 新增 `deepseek-v4.1-flash`，现有 7 个具名代理按明确合同与风险分工：GLM-5.3-Flash 为默认低风险批量 worker，DeepSeek 用于快速批量与长上下文，Haiku 用于快速明确的低复杂度任务；GLM-5.3 承担需更多推演的常规实现，Sol 承担复杂或高风险任务，Astra 承担最难任务，Gemini 保留文案/UI 专项边界。
+- `haiku-5.5` 与 `deepseek-v4.1-flash` 使用 Magpie 聚合路由 `group/auto-claude-haiku-5-5:medium`、`group/deepseek-v4.1-flash`。两个组均已通过 Anthropic Messages 工具往返；仅 Haiku 已验证接受 `:medium`，DeepSeek 未测试该后缀。
+- 精简 agent descriptions、常驻规则与按需编排手册，保留自包含 prompt、工具自证、两阶段审查和主控独立验收；选型依据集中在 agent description，路由兼容说明集中在示例。
+- `scripts/verify.sh` 核心模型列表包含 6 个模型，新增 DeepSeek 检查，缺失返回失败；Gemini 仍为可选。默认仅检查模型列表，不发送生成请求。
+- 检查范围：文档 diff 格式、安装与验证脚本语法、默认模型列表验证，以及编排入口的内容与改动范围检查。
+
 ## 0.3.1 - 2026-10-09
 
 - README 开头改述定位：Claude Code 作为 harness，供无法订阅 Claude 官方模型的用户使用；默认主控为 GPT-6.1 Sol，没有 GPT 订阅时以 GLM-5.3 替代。

@@ -30,7 +30,7 @@ case "$VERIFY_BASE" in
   */v1) VERIFY_API="$VERIFY_BASE" ;;
   *) VERIFY_API="$VERIFY_BASE/v1" ;;
 esac
-VERIFY_MODEL="${SMOKE_MODEL:-opencode-go/claude-haiku-5-5:medium}"
+VERIFY_MODEL="${SMOKE_MODEL:-group/auto-claude-haiku-5-5:medium}"
 VERIFY_TMP="$(mktemp -d "${TMPDIR:-/tmp}/claude-workflow-verify.XXXXXX")"
 trap 'rm -rf "$VERIFY_TMP"' EXIT
 H=(-H "Authorization: Bearer $VERIFY_KEY" -H "x-api-key: $VERIFY_KEY" \
@@ -58,7 +58,7 @@ try:
     if not isinstance(data, list):
         raise ValueError("模型列表缺少 data 数组")
     ids = {item["id"] for item in data if isinstance(item, dict) and isinstance(item.get("id"), str)}
-    haiku_ids = ("opencode-go/claude-haiku-5-5",)
+    haiku_ids = ("group/auto-claude-haiku-5-5", "opencode-go/claude-haiku-5-5")
     if sys.argv[2]:
         explicit = re.sub(r"\[1m\]$", "", sys.argv[2])
         base = re.sub(r":(?:low|medium|high|xhigh|max)$", "", explicit)
@@ -69,6 +69,7 @@ try:
         ("GLM-5.3", ("glm-5.3", "zcode/GLM-5.3")),
         ("GLM-5.3-Flash", ("glm-5.3-flash", "zcode/GLM-5.3-Flash")),
         ("Haiku 5.5", haiku_ids),
+        ("DeepSeek V4.1 Flash", ("group/deepseek-v4.1-flash", "opencode-go/deepseek-flash", "commandcode/deepseek/deepseek-v4.1-flash")),
     )
     missing = []
     for label, candidates in required:
