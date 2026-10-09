@@ -10,6 +10,18 @@
 - `scripts/verify.sh` 核心模型列表包含 6 个模型，新增 DeepSeek 检查，缺失返回失败；Gemini 仍为可选。默认仅检查模型列表，不发送生成请求。
 - 检查范围：文档 diff 格式、安装与验证脚本语法、默认模型列表验证，以及编排入口的内容与改动范围检查。
 
+## 0.3.1 - 2026-10-09
+
+- README 开头改述定位：Claude Code 作为 harness，供无法订阅 Claude 官方模型的用户使用；默认主控为 GPT-6.1 Sol，没有 GPT 订阅时以 GLM-5.3 替代。
+- subagent 分工改为按**模型能力与成本**分三层——主控（Controller）、力工（Worker）、审查与专项（Review / Specialist），明细表新增「层级」列并说明同一模型可随订阅条件换层。
+- `gemini-3.8-flash` 默认推理改为 `max`；路由对外提供 low/medium/high，该档位已随子代理实际调用验证，`examples/magpie-routing.md` 同步。
+
+## Mod 发布：token-speed 0.3.2 - 2026-10-09
+
+- 修复主控上下文进度条闪烁：部分读数与主控模型切换不再把已知读数打回未知；详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)。
+- 离线模型表扩充到 24 条前沿型号（补上 Gemini 3.8 Flash、DeepSeek V4.1 Flash、Claude Fable 5.1、GPT-6 Sol/Luna 等），每条带官方来源与核验日期。
+- tag `token-speed-v0.3.2`，不改变编排仓库版本。
+
 ## 0.3.0 - 2026-10-09
 
 - 新增可选专项代理 `gemini-3.8-flash`（Magpie 路由 `commandcode/google/gemini-3.8-flash`）：仅用于文案优化/润色（可直接编辑指定的纯文字）与 UI 审美反馈（只反馈）；开放 Read/Glob/Grep/Edit/Write，仅限指定纯文字编辑；不参与工程实现、根因、架构或并发/恢复/交易/持久化审查。未接入时不影响其他五个 agent。
