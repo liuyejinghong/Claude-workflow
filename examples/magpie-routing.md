@@ -10,11 +10,13 @@
 | `gpt-6-astra` | `codex/gpt-6-astra:high` | `codex/gpt-6-astra:high` | high |
 | `glm-5.3` | `glm-5.3` | `glm-5.3[1m]` | max |
 | `glm-5.3-flash` | `glm-5.3-flash` | `glm-5.3-flash[1m]` | max |
-| `deepseek-v4.1-flash` | `opencode-go/deepseek-flash` | `opencode-go/deepseek-flash[1m]` | 未指定（上游 thinking 默认开启；effort 后缀未核验） |
+| `deepseek-v4.1-flash` | `group/deepseek-v4.1-flash` | `group/deepseek-v4.1-flash[1m]` | 未指定（上游 thinking 默认开启；effort 后缀未核验） |
 | `haiku-5.5` | `opencode-go/claude-haiku-5-5:medium` | `opencode-go/claude-haiku-5-5:medium[1m]` | medium |
 | `gemini-3.8-flash`（可选） | `commandcode/google/gemini-3.8-flash` | `commandcode/google/gemini-3.8-flash` | 未指定，未核验 |
 
 GPT 与 Haiku 使用冒号 effort，GLM 保持兼容裸名。`[1m]` 是 Claude Code 的窗口声明，由客户端剥离，不属于 Magpie 请求 route。
+
+`group/deepseek-v4.1-flash` 是 Magpie 的**聚合智能路由**，在 OpenCode Go 与 Command Code 之间自动选渠道，因此主控不需要按渠道路由；`[1m]` 同样由客户端剥离。该组已实测 Anthropic Messages 工具往返 `tool_use → tool_result → end_turn` 通过。Magpie 也已自动发现同类聚合路由 `group/auto-claude-haiku-5-5`；`haiku-5.5` agent 目前仍显式指定 `opencode-go/claude-haiku-5-5:medium`，以保留已验证的 effort 档位——改用聚合路由前应先确认 `:medium` 后缀仍被接受。
 
 **Gemini（可选）：** 上游为 Command Code（`commandcode` provider），需要你自己在 Magpie UI 中配置凭据与 route；仓库不包含也不应写入任何用户凭据。该路由已完成连通与工具调用验证，配额未核验；实际可用性取决于各自上游配置与额度。未配置该路由时 `gemini-3.8-flash` 子代理不可用，不影响其他六个 agent。Gemini 上游单次输出上限最高 65536，若 `CLAUDE_CODE_MAX_OUTPUT_TOKENS` 设置更高会报 400，见[编排手册](../skills/multi-model-orchestration/SKILL.md)中的说明。
 

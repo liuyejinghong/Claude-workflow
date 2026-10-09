@@ -69,7 +69,7 @@ try:
         ("GLM-5.3", ("glm-5.3", "zcode/GLM-5.3")),
         ("GLM-5.3-Flash", ("glm-5.3-flash", "zcode/GLM-5.3-Flash")),
         ("Haiku 5.5", haiku_ids),
-        ("DeepSeek V4.1 Flash", ("opencode-go/deepseek-flash", "commandcode/deepseek/deepseek-v4.1-flash")),
+        ("DeepSeek V4.1 Flash", ("group/deepseek-v4.1-flash", "opencode-go/deepseek-flash", "commandcode/deepseek/deepseek-v4.1-flash")),
     )
     missing = []
     for label, candidates in required:

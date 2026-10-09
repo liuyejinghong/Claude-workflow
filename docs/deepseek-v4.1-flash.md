@@ -4,7 +4,13 @@
 
 本文件记录把 DeepSeek V4.1 Flash 编入力工档的依据。它是力工档第二名：默认力工仍是 GLM-5.3-Flash（额度最宽、同档能力最高），DeepSeek V4.1 Flash 在"总时长或缓存成本决定结果"时替换它，Haiku 5.5 只承担短上下文、急着要结果的插队任务。档内排序依据是**供给可持续 > 单位能力 > 速度**，速度排在最后，因为力工任务通常不在关键路径上。
 
+## 路由与渠道
+
+agent 使用 Magpie 的**聚合智能路由** `group/deepseek-v4.1-flash`（本机 `/v1/models` 已确认暴露），该组在 OpenCode Go 与 Command Code 之间自行选择渠道，因此主控不按渠道路由、也不应假设请求落在哪一边。已实测该组的 Anthropic Messages 工具往返：`tool_use → tool_result → end_turn` 通过。
+
 ## 订阅额度与计费
+
+额度取决于组最终选中的渠道，下表是两个渠道各自的官方口径：
 
 | 项目 | OpenCode Go | Command Code GOAT |
 |---|---|---|
@@ -13,7 +19,7 @@
 | 窗口 | 5 小时 = 月额度 20%（$12）、周 50%（$30）、月 100%；按模型独立记账 | 5 小时 $14、周 $35（池级），月 $70 |
 
 - 两边官方文档均把 DeepSeek V4.1 Flash 列为**加成额度**；Command Code 价格页写明"permanently boosted monthly credits, with no end date"。
-- OpenCode Go 的额度**按模型独立计算**，Haiku 的 $15 与 DeepSeek 的 $60 互不挤占（控制台文档原文："Each model's monthly limit below determines how its usage counts toward those allowances"）。GOAT 是共享池，两个模型会互相消耗。
+- 两个渠道的额度口径不同：OpenCode Go 的额度**按模型独立计算**（控制台文档原文："Each model's monthly limit below determines how its usage counts toward those allowances"），落在该渠道时 DeepSeek 的 $60 不与 Haiku 挤占；Command Code 侧是 $70 共享池，同池模型互相消耗。**因为聚合路由自行选渠道，不要把"额度独立"当成前提。**
 - 超限行为：OpenCode Go 需开启控制台 "Use balance" 才回落到 Zen 余额，否则请求被拦；GOAT 可买额外 credits（不过期、可结转），没有则付费模型不可用、免费模型继续。
 
 **峰谷计费（只有 DeepSeek V4 Pro/V4.1 Flash/V4 Flash 系列有）：**
