@@ -1,5 +1,14 @@
 # token-speed Changelog
 
+## 0.3.2
+
+对应 tag `token-speed-v0.3.2`；保留已发布的 0.3.0 与 0.3.1 tag。
+
+- 修复主控上下文进度条闪烁。`$.session.usage()` 偶尔返回只带 `window`、没有有效 `tokens` 的部分读数，过去会把已知的 `21%/1.0M` 覆盖成 `—%`，下一次轮询再恢复。现在同一窗口的部分读数沿用上次已知读数；主控模型切换（`refreshMain` 与 `turn.step` 两处）也不再先把 context 清成未知。主控 context 仍只由成功压缩与整会话重置清空，子代理行的模型切换重建行为不变。
+- 离线模型表由 7 条扩到 24 条，补齐 `gemini-3.8-flash`（1,048,576 输入容量，与 65,536 输出上限分开）、`deepseek-v4.1-flash`（官方 id 为 `deepseek-flash`，另收 `deepseek-v4-flash` 与 `deepseek-v4-pro`）、`claude-fable-5-1` 及 Claude 1M/200k 系列、`gpt-6-sol`、`gpt-6-luna` 等，全部带官方来源 URL 与核验日期 2026-10-09。不把未核实的邻近型号（含 `flashx`）映射到已知型号。
+- `/tok-speed` 帮助文本补上 `cli-input-official-capacity` 来源。
+- 测试 41 → 42：新增「部分读数不覆盖已知主控读数、主控模型切换不清空」回归测试；三处改动分别回退后该测试都会失败，确认各自都有覆盖。
+
 ## 0.3.1
 
 对应 tag `token-speed-v0.3.1`；保留已发布的 0.3.0 tag。

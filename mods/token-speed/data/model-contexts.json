@@ -10,6 +10,14 @@
       "date": "2026-10-09"
     },
     {
+      "id": "claude-sonnet-5-5", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceURL": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
+      "additionalSources": ["https://platform.claude.com/docs/en/build-with-claude/context-windows"],
+      "date": "2026-10-09"
+    },
+    {
       "id": "claude-opus-5-5", "aliases": [],
       "defaultWindow": 1000000, "maxWindow": 1000000,
       "sourceScope": "official-shared-input-output-context",
@@ -18,11 +26,92 @@
       "date": "2026-10-09"
     },
     {
-      "id": "claude-sonnet-5-5", "aliases": [],
+      "id": "claude-fable-5-1", "aliases": [],
       "defaultWindow": 1000000, "maxWindow": 1000000,
       "sourceScope": "official-shared-input-output-context",
-      "sourceURL": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
+      "sourceURL": "https://platform.claude.com/docs/en/models/fable-5-1/overview",
       "additionalSources": ["https://platform.claude.com/docs/en/build-with-claude/context-windows"],
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-fable-5", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceURL": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-mythos-5-1", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceValue": "Limited availability",
+      "sourceURL": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-mythos-5", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceValue": "Limited availability",
+      "sourceURL": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-opus-5", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceURL": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-sonnet-5", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceURL": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-opus-4-8", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceURL": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-opus-4-7", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceURL": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-opus-4-6", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceURL": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-sonnet-4-6", "aliases": [],
+      "defaultWindow": 1000000, "maxWindow": 1000000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceURL": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-haiku-4-5", "aliases": [],
+      "defaultWindow": 200000, "maxWindow": 200000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceValue": "200k",
+      "sourceURL": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "date": "2026-10-09"
+    },
+    {
+      "id": "claude-sonnet-4-5", "aliases": [],
+      "defaultWindow": 200000, "maxWindow": 200000,
+      "sourceScope": "official-shared-input-output-context",
+      "sourceValue": "200k (deprecated model)",
+      "sourceURL": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
       "date": "2026-10-09"
     },
     {
@@ -44,6 +133,20 @@
       "date": "2026-10-09"
     },
     {
+      "id": "gpt-6-sol", "aliases": [],
+      "defaultWindow": 272000, "maxWindow": 872000,
+      "sourceScope": "official-codex-default",
+      "sourceURL": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json",
+      "date": "2026-10-09"
+    },
+    {
+      "id": "gpt-6-luna", "aliases": [],
+      "defaultWindow": 272000, "maxWindow": 872000,
+      "sourceScope": "official-codex-default",
+      "sourceURL": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json",
+      "date": "2026-10-09"
+    },
+    {
       "id": "glm-5.3", "aliases": [], "defaultWindow": null, "contextWindow": 1000000,
       "sourceScope": "official-capacity-only", "sourceValue": "1M (decimal normalized)",
       "sourceURL": "https://docs.z.ai/guides/llm/glm-5.3", "date": "2026-10-09"
@@ -51,7 +154,28 @@
     {
       "id": "glm-5.3-flash", "aliases": [], "defaultWindow": null, "contextWindow": 1000000,
       "sourceScope": "official-capacity-only", "sourceValue": "1M (decimal normalized)",
-      "sourceURL": "https://docs.z.ai/guides/llm/glm-5.3-flash", "date": "2026-10-09"
+      "sourceURL": "https://docs.z.ai/guides/vlm/glm-5.3-flash", "date": "2026-10-09"
+    },
+    {
+      "id": "deepseek-v4.1-flash", "aliases": ["deepseek-flash", "deepseek-v4-flash"],
+      "defaultWindow": null, "contextWindow": 1000000,
+      "sourceScope": "official-capacity-only",
+      "sourceValue": "1M; official model id is deepseek-flash, local route tail is deepseek-v4.1-flash",
+      "sourceURL": "https://api-docs.deepseek.com/quick_start/pricing", "date": "2026-10-09"
+    },
+    {
+      "id": "deepseek-v4-pro", "aliases": ["deepseek-v4-pro-0813"],
+      "defaultWindow": null, "contextWindow": 1000000,
+      "sourceScope": "official-capacity-only", "sourceValue": "1M (DeepSeek-V4-Pro-0813)",
+      "sourceURL": "https://api-docs.deepseek.com/quick_start/pricing", "date": "2026-10-09"
+    },
+    {
+      "id": "gemini-3.8-flash", "aliases": [], "defaultWindow": null, "contextWindow": 1048576,
+      "sourceScope": "official-capacity-only",
+      "sourceValue": "1,048,576 input tokens (input and output limits are separate; output limit 65536)",
+      "sourceURL": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash",
+      "additionalSources": ["https://deepmind.google/models/model-cards/gemini-3-8-flash/"],
+      "date": "2026-10-09"
     }
   ],
   "overrides": [
