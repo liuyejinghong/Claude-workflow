@@ -1,16 +1,25 @@
-# token-speed 0.3.2
+# token-speed 0.4.0
 
 适用于 Claude Code 2.1.294 的 function-hooks mod。在提示框上方，主控与每个活跃子代理各用一行显示模型、effort、上下文与输出速率，工作区放在最后一行。只观察原有请求，不调用额外模型、不引入 tokenizer 或网络请求；分支通过引擎 process API 调用本机 git。
 
 ```text
 ⚡ main · gpt-6.1-sol · high · Ctx ██████▊    67%/272k · Live ~42.1 · Last 31.2 · Avg 28.6 tok/s · streaming
 ↳ abcdefg1 · glm-5.3-flash · max · Ctx █▍         14%/1.0M · Live ~35.2 · Last 29.1 · Avg 30.4 tok/s · streaming
-⌂ Claude-workflow on main
+🌳 Claude-workflow on main
 ```
 
 主控始终第一，子代理按首次观察顺序每个一行，切换 view 不过滤。短 id 自动延长到可区分同会话代理；工具间隙保留行，Live 为 `—`，明确终态后隐藏，历史通过 `/tok-speed` 查询。带 survey 或 `maxRows=0` 时隐藏，其它插件和引擎的内容原样保留。只有主控时为代理行加工作区行，共两行；行数预算不足先丢工作区。
 
-各列按终端显示宽度对齐，包括双宽的 `⚡`、CJK 与常见 emoji。速率数字右对齐，单位 `tok/s` 每行只显示一次。动态宽度不足时依次省略 status、Last、缩短进度条，始终保留 effort、上下文数值、Live 与 Avg；特别窄时可缩短模型显示。渲染前计算可见内容宽度，Text 的 `truncate-end` 只作最后保护。
+各列按终端显示宽度对齐，包括双宽的 `⚡`、CJK 与常见 emoji。宽屏速率数字右对齐，单位 `tok/s` 每行只显示一次；宽度不足时先省略 status、Last、进度条，再缩短模型。如果原布局会把模型压到不足 4 格（原名称不足 4 格时保留原宽），或最小布局仍超宽，就切换为每代理一行的紧凑格式：
+
+```text
+⚡ main gpt-6.1-sol high C42%/272k L—
+⚡ main C42%/272k L~42.1
+```
+
+紧凑格式只保留一个实时速率 `L`（Live），手机端不再显示 Avg；Avg 仍在宽屏布局与 `/tok-speed` 中查看。主控标签为 `⚡ main`，与宽屏一致。`C` 为上下文、`L` 为 Live，Live 的估算标记 `~` 保留。紧凑行不画条形，不显示 Last/status，不给数字加对齐空格；按各行实际 cell 宽度先缩短模型至至少 4 格，再依次省略模型、effort、上下文窗口容量，保留百分比或未知标记，绝不把未知写成 0%。32 列及以上子代理保留原短 id；24–31 列必要时改用可见代理内可区分的最短前缀，主控可缩为 `m`。常规手机宽度优先完整保留上下文读数与 Live 数字及单位；异常长数值或不足 24 列时可再省略 Live，最终截断仅作保护。紧凑模式工作区行 `🌳` 只显示分支（无分支时显示仓库名）；宽屏保持 `🌳 仓库名 on 分支`。每次渲染重新计算预算，终端变宽后自动恢复完整布局。
+
+宽度采用宿主提供的 `bodyColumns`，可能小于终端总列数。`[-]` 折叠标记、滚动和 `n more` 提示由 Claude Code 的 AbovePrompt 宿主管理；插件不改变其行数预算，有空余行才在代理之后显示工作区。
 
 进度条是固定 10 个终端 cell 的短矩形，轨道使用 theme `rate_limit_empty`，整格填充 `█`，尾部使用 `▏▎▍▌▋▊▉` 表示 1/8 cell。共 80 个视觉档位（10 格 × 8 档），因此 0–100 的整数百分点不是每个都有不同的条形：相邻百分点可落在同一档（例如 67% 与 68% 的条形相同，但数字 `67%`、`68%` 不同）。宽屏也不扩展为长条。窄屏可省略条形，数值始终保持整数 1% 精度。填充固定使用 theme `rate_limit_fill`，不随占用变化，没有横向渐变；Ctx 数值用 `text`，未知占用用 `inactive`。未知占用只画轨道空条，并以 `—%` 或 `?` 明确标为未知，不能解释为 0%。
 
@@ -31,10 +40,10 @@ Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.eff
 /plugin install token-speed@claude-workflow-mods
 ```
 
-也可用固定 tag `token-speed-v0.3.2` 获取源文件，并从 checkout 加载：
+也可用固定 tag `token-speed-v0.4.0` 获取源文件，并从 checkout 加载：
 
 ```sh
-git clone --branch token-speed-v0.3.2 https://github.com/liuyejinghong/Claude-workflow.git
+git clone --branch token-speed-v0.4.0 https://github.com/liuyejinghong/Claude-workflow.git
 claude --plugin-dir ./Claude-workflow/mods/token-speed
 ```
 
@@ -88,4 +97,4 @@ claude plugin test <mod-dir>
 
 本目录 tsconfig 开启 strict/noUncheckedIndexedAccess，包含 hooks、tests、自有 types 和生成的 `.claude-plugin/types`。测试使用实际 `claude-code/testing` 和 mock.clock 合成 stream，不联网或调用模型。
 
-测试保留流透传、单次 next、测量/Unicode/加权平均、失败清理、reset/clear/reload、并发独立桶与生命周期竞态合同，并核验统一代理行、配置 effort 后备、主控/子代理上下文隔离、成功压缩、10 格块状条 80 档视觉映射（0–100 为 81 种可见状态，67/68 同形但数字不同）、配置子代理窗口、80/120/240 列预算、显示宽对齐、UI 隐藏渠道和命令完整渠道。kit 只验证引擎 tree 与合同，不代替终端字体的实际截图验收。
+测试保留流透传、单次 next、测量/Unicode/加权平均、失败清理、reset/clear/reload、并发独立桶与生命周期竞态合同，并核验统一代理行、配置 effort 后备、主控/子代理上下文隔离、成功压缩、10 格块状条 80 档视觉映射（0–100 为 81 种可见状态，67/68 同形但数字不同）、配置子代理窗口、24/32/40/49/54/60/80/120/240 列预算、同 mount 缩窄后恢复、窄屏标识区分与未知语义、显示宽对齐、UI 隐藏渠道和命令完整渠道。kit 只验证引擎 tree 与合同，不代替终端字体的实际截图验收。

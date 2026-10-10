@@ -444,6 +444,39 @@ function fitText(text: string, width: number): string {
   return fitted + '…'
 }
 
+type CompactPart = { text: string; color: ThemeKey; bold?: boolean }
+function compactParts(r: TokenSpeedRow, label: string, narrowLabel: string, model: string, effort: string,
+  context: string, live: string, effortColor: ThemeKey, columns: number): CompactPart[] {
+  let modelCells = cellWidth(model)
+  let showModel = true
+  let showEffort = true
+  let showLive = true
+  const parts = (): CompactPart[] => [
+    { text: label, color: r.id === 'main' ? 'claude' : 'inactive', bold: r.id === 'main' },
+    ...(showModel ? [{ text: fitText(model, modelCells), color: 'text' as const }] : []),
+    ...(showEffort ? [{ text: effort, color: effortColor }] : []),
+    { text: `C${context}`, color: r.context.window > 0 && r.context.percent !== null ? 'text' : 'inactive' },
+    ...(showLive ? [{ text: `L${live}`, color: r.live === null ? 'inactive' as const : 'text' as const,
+      bold: r.live !== null }] : []),
+  ]
+  const width = (): number => cellWidth(parts().map(part => part.text).join(' '))
+  if (width() > columns) modelCells = Math.max(Math.min(4, modelCells), modelCells - (width() - columns))
+  if (width() > columns) showModel = false
+  if (width() > columns) showEffort = false
+  if (width() > columns) context = r.context.window > 0
+    ? `${r.context.percent === null ? '—' : Math.round(r.context.percent)}%` : '?'
+  if (width() > columns && columns < 32) label = narrowLabel
+  // Unusually long readings and tiny terminals may omit Live before clipping the essentials.
+  if (width() > columns) showLive = false
+  let remaining = columns
+  return parts().map((part, index) => {
+    const gap = index > 0 && remaining > 0 ? ' ' : ''
+    const text = gap + fitText(part.text, Math.max(0, remaining - gap.length))
+    remaining -= cellWidth(text)
+    return { ...part, text }
+  })
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const rest = await next(e)
@@ -642,11 +675,6 @@ export const register: Register = on => {
     const effortColors: Record<Exclude<TokenSpeedEffort, number>, ThemeKey> =
       { low: 'success', medium: 'planMode', high: 'warning', xhigh: 'error', max: 'error' }
     const workspace = state.session.workspace
-    const workspaceLine = budget >= 1 && workspace
-      ? <Text key="token-speed-workspace" color="inactive" wrap="truncate-end">
-          {fitText(`⌂ ${workspace.name}${workspace.branch ? ` on ${workspace.branch}` : ''}`, e.props.bodyColumns)}
-        </Text>
-      : null
     const labels = visible.map(r => r.id === 'main' ? '⚡ main' : `↳ ${shortId(r.id, state.rows)}`)
     const models = visible.map(r => displayModel(r.currentModel))
     const efforts = visible.map(r => r.effort === null ? '—' : String(r.effort))
@@ -661,6 +689,7 @@ export const register: Register = on => {
     const multi = visible.length > 1
     const labelWidth = maxWidth(labels)
     let modelWidth = maxWidth(models)
+    const originalModelWidth = modelWidth
     const effortWidth = maxWidth(efforts)
     const contextWidth = maxWidth(contexts)
     const liveWidth = maxWidth(lives, 5)
@@ -681,8 +710,24 @@ export const register: Register = on => {
     if (width(cells) > columns) showLast = false
     if (width(cells) > columns) cells = 0
     if (width(cells) > columns) modelWidth = Math.max(1, modelWidth - (width(cells) - columns))
-    // At extremely small widths preserve the numeric context/effort and rates;
-    // model alone can be abbreviated after optional columns have been exhausted.
+    const compact = modelWidth < Math.min(4, originalModelWidth) || width(cells) > columns
+    const workspaceLine = budget >= 1 && workspace
+      ? <Text key="token-speed-workspace" color="inactive" wrap="truncate-end">
+          {fitText(compact
+            ? `🌳 ${workspace.branch ?? workspace.name}`
+            : `🌳 ${workspace.name}${workspace.branch ? ` on ${workspace.branch}` : ''}`, e.props.bodyColumns)}
+        </Text>
+      : null
+    const compactLabels = visible.map(r => r.id === 'main' ? '⚡ main' : shortId(r.id, state.rows))
+    const narrowMain = visible.some(r => r.id === 'm') ? 'main' : 'm'
+    const narrowLabels = visible.map(r => {
+      if (r.id === 'main') return narrowMain
+      const chars = Array.from(r.id)
+      let length = 1
+      while (length < chars.length && visible.some(other => other.id !== r.id
+        && (other.id === 'main' ? narrowMain : other.id).startsWith(chars.slice(0, length).join('')))) length++
+      return chars.slice(0, length).join('')
+    })
     const aligned = (text: string, size: number): string => multi ? padEndTo(text, size) : text
     return <Box flexDirection="column">
       {visible.map((r, index) => {
@@ -694,6 +739,13 @@ export const register: Register = on => {
         const fill = '█'.repeat(full) + partial
         const track = ' '.repeat(cells - full - (partial ? 1 : 0))
         const effortColor = r.effort === null ? 'inactive' : typeof r.effort === 'number' ? 'subtle' : effortColors[r.effort]
+        if (compact) {
+          const parts = compactParts(r, compactLabels[index] ?? '', narrowLabels[index] ?? '', models[index] ?? '',
+            efforts[index] ?? '—', contexts[index] ?? '—/?', lives[index] ?? '—', effortColor, columns)
+          return <Text key={`token-speed-${r.id}`} color="inactive" wrap="truncate-end">
+            {parts.map((part, partIndex) => <Text key={`compact-${partIndex}`} color={part.color} bold={part.bold}>{part.text}</Text>)}
+          </Text>
+        }
         return <Text key={`token-speed-${r.id}`} color="inactive" wrap="truncate-end">
           <Text color={r.id === 'main' ? 'claude' : 'inactive'} bold={r.id === 'main'}>{aligned(labels[index] ?? '', labelWidth)}</Text>
           {' · '}<Text color="text">{aligned(fitText(models[index] ?? '', modelWidth), modelWidth)}</Text>

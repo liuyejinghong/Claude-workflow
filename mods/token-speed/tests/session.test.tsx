@@ -99,7 +99,7 @@ test('agent line shows effort tier colour and a uniform context meter without du
   expect(meter?.props.backgroundColor).toBe('rate_limit_empty')
   expect(meter?.text.length).toBe(10)
   expect(lines[0]?.text).not.toMatch(/[━─]/)
-  expect((await ui.findAll({ type: 'Text', text: /⌂/ })).length).toBe(1)
+  expect((await ui.findAll({ type: 'Text', text: /🌳/ })).length).toBe(1)
   expect((await command($)).text).toMatch('codex/gpt-6.1-sol')
   await ui.unmount()
 })
@@ -126,9 +126,13 @@ test('workspace line shows repository name on current branch', OPTIONS, async ($
   await $.session.start(START)
   await finishAt(clock, consume($.turn.step(request())), 500)
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  const line = await ui.find({ type: 'Text', text: '⌂' })
-  expect(line?.text).toMatch('⌂ Claude-workflow on feat/token-speed')
+  const line = await ui.find({ type: 'Text', text: '🌳' })
+  expect(line?.text).toMatch('🌳 Claude-workflow on feat/token-speed')
   await ui.unmount()
+  const compact = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 49 } })
+  const compactLine = await compact.find({ type: 'Text', text: '🌳' })
+  expect(compactLine?.text).toBe('🌳 feat/token-speed')
+  await compact.unmount()
 })
 
 test('workspace without a repository falls back to the session folder name', OPTIONS, async ($, on) => {
@@ -137,8 +141,8 @@ test('workspace without a repository falls back to the session folder name', OPT
   await $.session.start(START)
   await finishAt(clock, consume($.turn.step(request())), 500)
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  const line = await ui.find({ type: 'Text', text: '⌂' })
-  expect(line?.text).toMatch('⌂ BTCKDJ')
+  const line = await ui.find({ type: 'Text', text: '🌳' })
+  expect(line?.text).toMatch('🌳 BTCKDJ')
   expect(line?.text).not.toMatch(' on ')
   await ui.unmount()
 })
@@ -249,7 +253,7 @@ test('band budget preserves one complete agent line and places workspace last', 
   for (const [maxRows, workspace] of [[2, true], [3, true], [1, false]] as const) {
     const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, maxRows } })
     expect(Boolean(await ui.find({ type: 'Text', text: '45%/272k' }))).toBe(true)
-    expect(Boolean(await ui.find({ type: 'Text', text: '⌂' }))).toBe(workspace)
+    expect(Boolean(await ui.find({ type: 'Text', text: '🌳' }))).toBe(workspace)
     expect((await ui.findAll({ type: 'Text', text: / · Live / })).length).toBe(1)
     await ui.unmount()
   }
@@ -354,6 +358,157 @@ test('fixed 10-cell block meter: 67 and 68 share a fill but keep distinct intege
     if (columns === 240) expect(((await ui.findAll({ type: 'Text' })).find(node => node.props.backgroundColor === 'rate_limit_empty'))?.text).toBe('█'.repeat(6) + '▊' + ' '.repeat(3))
     await ui.unmount()
   }
+})
+function terminalCells(text: string): number {
+  let cells = 0
+  let joined = false
+  for (const char of text) {
+    const code = char.codePointAt(0)!
+    if (code === 0x200d) { joined = true; continue }
+    if (/\p{Mark}/u.test(char) || code === 0xfe0f || code < 32) continue
+    if (joined) { joined = false; continue }
+    cells += char === '⚡' || /[\p{Unified_Ideograph}\p{Extended_Pictographic}]/u.test(char) ? 2 : 1
+  }
+  return cells
+}
+
+function seededBand(on: On, live: number | null, mainContext: TokenSpeedRow['context'] =
+  { tokens: 114240, window: 272000, percent: 42, source: 'session' },
+  childIds = ['alpha-worker-one', 'beta-worker-two', 'gamma-worker-three']): string[] {
+  const ids = ['main', ...childIds]
+  const models = ['codex/gpt-6.1-sol', 'provider/very-long-model-name-for-a-small-terminal',
+    'provider/中文👩‍💻模型-with-a-long-tail', 'provider/unknown-context-model']
+  setup(on, { model: models[0], usage: { startedAt: 0,
+    context: { window: mainContext.window, ...(mainContext.tokens === null ? {} : { tokens: mainContext.tokens }),
+      ...(mainContext.percent === null ? {} : { percent: mainContext.percent }) }, rateLimits: [] },
+    registry: JSON.stringify({ version: 1, models: [], overrides: [
+      { id: 'gpt-6.1-sol', aliases: [], window: 272000, reason: 'Test override' },
+      { id: 'very-long-model-name-for-a-small-terminal', aliases: [], window: 272000, reason: 'Test override' },
+    ] }) }, async () => ids.slice(1).map(id => info(id)))
+  let seeded = false
+  on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => {
+    if (seeded) return next(e)
+    seeded = true
+    const rows: TokenSpeedRow[] = ids.map((id, index) => ({ id, description: '', running: true,
+      currentModel: models[index]!, active: null, live, status: 'streaming', seen: true,
+      turnId: null, revision: 0, effort: 'high', effortSource: 'request',
+      context: index < 2 ? mainContext : { tokens: index === 2 ? 5500 : null, window: 0, percent: null, source: 'unknown' },
+      models: [{ model: models[index]!, outputTokens: 286, durationMs: 10000, samples: 1, lastApi: 28.6 }],
+    }))
+    return next({ ...e, value: { version: 2, rows, session: { context: mainContext, workspace: null } } })
+  })
+  return ids
+}
+
+for (const live of [null, 42.1]) {
+  test(`phone and wide bands fit cell budgets with full rates and context semantics (Live ${live ?? 'unknown'})`, OPTIONS, async ($, on) => {
+    const ids = seededBand(on, live)
+    await $.session.start(START)
+    const before = await state($)
+    expect(before.rows.map(r => r.id)).toEqual(ids)
+    expect(before.rows.every(r => r.running && r.seen)).toBe(true)
+    expect(before.rows[0]?.models[0]?.outputTokens).toBe(286)
+    const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+    for (const columns of [24, 32, 40, 49, 54, 60, 80, 120, 240]) {
+      await ui.redraw({ ...BAND, bodyColumns: columns })
+      const rows = (await ui.findAll({ type: 'Text' })).filter(node => node.props.wrap === 'truncate-end' && /(?: C| · Ctx )/.test(node.text))
+      expect(rows.length).toBe(ids.length)
+      expect(rows[0]?.text).toMatch(columns < 80 ? /^(⚡ main|m) / : /^⚡ main/)
+      expect(rows[1]?.text).toMatch(columns < 80 ? /^(alpha-wo|a) / : /^↳ alpha-wo/)
+      expect(rows[2]?.text).toMatch(columns < 80 ? /^(beta-wor|b) / : /^↳ beta-wor/)
+      expect(rows[3]?.text).toMatch(columns < 80 ? /^(gamma-wo|g) / : /^↳ gamma-wo/)
+      for (const line of rows) {
+        expect(line.text).not.toMatch(/[\r\n]/)
+        expect(terminalCells(line.text)).toBeLessThanOrEqual(columns)
+        expect(line.props.wrap).toBe('truncate-end')
+        if (columns < 80) expect(line.text).not.toMatch('A28.6/s')
+        else expect(line.text).toMatch('Avg  28.6 tok/s')
+        expect(line.text).not.toMatch('provider/')
+        if (columns < 80) {
+          expect(line.text).not.toMatch(/Last|streaming|Ctx|  /)
+          expect(line.text).not.toMatch('…/s')
+        }
+      }
+      const mainLine = rows[0]?.text ?? ''
+      expect(mainLine).toMatch(columns < 32 ? 'C42%' : '42%/272k')
+      expect(rows[2]?.text).toMatch('5.5k/?')
+      expect(rows[3]?.text).toMatch('—/?')
+      if (columns === 49) {
+        expect(mainLine).toBe(`⚡ main gpt-6.1-sol high C42%/272k L${live === null ? '—' : '~42.1'}`)
+        expect(rows[1]?.text).toMatch(/^alpha-wo very/)
+      }
+      if (columns >= 32 && columns < 80) {
+        expect(rows[1]?.text.startsWith('alpha-wo ')).toBe(true)
+        expect(rows[2]?.text.startsWith('beta-wor ')).toBe(true)
+      }
+      if (columns === 24 && live !== null) expect(mainLine).toBe('⚡ main C42%/272k L~42.1')
+      if (columns < 80) {
+        expect((await ui.find({ type: 'Text', text: /^⚡ main$|^m$/ }))?.props.color).toBe('claude')
+        expect((await ui.findAll({ type: 'Text' })).some(node => node.text === ' A28.6/s')).toBe(false)
+        expect((await ui.find({ type: 'Text', text: /^ L—$/ }))?.props.color).toBe(live === null ? 'inactive' : undefined)
+        expect((await ui.findAll({ type: 'Text' })).some(node => node.props.backgroundColor === 'rate_limit_empty')).toBe(false)
+      }
+    }
+    expect(await state($)).toEqual(before)
+    await ui.unmount()
+  })
+}
+
+test('one mount restores full layout after 49 → 24 → 120 and preserves unknown percentages', OPTIONS, async ($, on) => {
+  seededBand(on, 42.1, { tokens: null, window: 272000, percent: null, source: 'session' })
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 49 } })
+  await ui.redraw({ ...BAND, bodyColumns: 120 })
+  const wide = (await ui.findAll({ type: 'Text' })).find(node => node.props.wrap === 'truncate-end' && /^⚡ main /.test(node.text))?.text
+  await ui.redraw({ ...BAND, bodyColumns: 49 })
+  expect((await ui.findAll({ type: 'Text' })).find(node => node.props.wrap === 'truncate-end' && /^(main|m|⚡ main) /.test(node.text))?.text).toMatch('C—%/272k')
+  await ui.redraw({ ...BAND, bodyColumns: 24 })
+  expect((await ui.findAll({ type: 'Text' })).find(node => node.props.wrap === 'truncate-end' && /^(main|m|⚡ main) /.test(node.text))?.text).toBe('⚡ main C—%/272k L~42.1')
+  expect((await ui.findAll({ type: 'Text' })).find(node => node.props.wrap === 'truncate-end' && /^(main|m|⚡ main) /.test(node.text))?.text).not.toMatch('C0%')
+  await ui.redraw({ ...BAND, bodyColumns: 120 })
+  const restored = (await ui.findAll({ type: 'Text' })).find(node => node.props.wrap === 'truncate-end' && /^(main|m|⚡ main) /.test(node.text))?.text ?? ''
+  expect(restored).toMatch(/⚡ main\s+· gpt-6\.1-sol/)
+  expect(restored).toMatch('· Ctx')
+  expect(restored).toMatch('—%/272k')
+  expect(restored).toBe(wide)
+  expect(restored).toMatch('· Avg  28.6 tok/s')
+  expect((await ui.findAll({ type: 'Text' })).some(node => node.props.backgroundColor === 'rate_limit_empty')).toBe(true)
+  await ui.unmount()
+})
+
+test('narrow child prefixes remain distinct and exceptionally small bands fit without adding rows', OPTIONS, async ($, on) => {
+  seededBand(on, 42.1, undefined, ['agent-one-long-id', 'agent-two-long-id', 'm'])
+  on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => next({ ...e,
+    value: { ...e.value, rows: e.value.rows.map((r, index) => index === 2 ? { ...r, currentModel: 'codex/gpt-6.1-sol',
+      context: { tokens: 114240, window: 272000, percent: 42, source: 'cli-input-window-config' },
+      models: [{ model: 'codex/gpt-6.1-sol', outputTokens: 286, durationMs: 10000, samples: 1, lastApi: 28.6 }] } : r) } }))
+  await $.session.start(START)
+  expect((await state($)).rows.map(r => r.id)).toEqual(['main', 'agent-one-long-id', 'agent-two-long-id', 'm'])
+  const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  for (const columns of [24, 31, 32]) {
+    await ui.redraw({ ...BAND, bodyColumns: columns })
+    const rows = (await ui.findAll({ type: 'Text' })).filter(node => node.props.wrap === 'truncate-end' && /(?: C| · Ctx )/.test(node.text))
+    const first = rows[1]?.text ?? ''
+    const second = rows[2]?.text ?? ''
+    expect(first.split(' ')[0]).not.toBe(second.split(' ')[0])
+    expect(first.startsWith('agent-on ')).toBe(true)
+    expect(second.startsWith('agent-tw ')).toBe(true)
+    expect(rows[0]?.text.split(' ')[0]).not.toBe(rows[3]?.text.split(' ')[0])
+    expect(terminalCells(first)).toBeLessThanOrEqual(columns)
+    expect(terminalCells(second)).toBeLessThanOrEqual(columns)
+    expect(first).not.toMatch('A28.6/s')
+    expect(second).not.toMatch('A28.6/s')
+  }
+  for (const columns of [1, 8, 16, 23]) {
+    await ui.redraw({ ...BAND, bodyColumns: columns })
+    const rows = (await ui.findAll({ type: 'Text' })).filter(node => node.props.wrap === 'truncate-end' && node.text !== 'rest band')
+    expect(rows.length).toBe(4)
+    for (const line of rows) {
+      expect(terminalCells(line.text)).toBeLessThanOrEqual(columns)
+      expect(line.text).not.toMatch(/[\r\n]/)
+    }
+  }
+  await ui.unmount()
 })
 
 

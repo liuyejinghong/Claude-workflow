@@ -35,7 +35,7 @@ Claude Code 提供成熟的原生 subagent、并行执行与后台通知。本�
 
 ---
 
-## token-speed 0.3.2：会话与代理状态监控
+## token-speed 0.4.0：会话与代理状态监控
 
 [token-speed](mods/token-speed/README.md) 是适用于 Claude Code 的独立 mod（基于 function-hooks，已在 2.1.294 验证）。它在终端输入框上方为每个活跃代理显示单行状态，最后一行显示当前工作区，不依赖 Magpie 或模型订阅：
 
