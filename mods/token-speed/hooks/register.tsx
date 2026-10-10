@@ -675,7 +675,7 @@ export const register: Register = on => {
     const effortColors: Record<Exclude<TokenSpeedEffort, number>, ThemeKey> =
       { low: 'success', medium: 'planMode', high: 'warning', xhigh: 'error', max: 'error' }
     const workspace = state.session.workspace
-    const labels = visible.map(r => r.id === 'main' ? '⚡ main' : `↳ ${shortId(r.id, state.rows)}`)
+    const labels = visible.map(r => r.id === 'main' ? '⚡ main' : `🌳 ${shortId(r.id, state.rows)}`)
     const models = visible.map(r => displayModel(r.currentModel))
     const efforts = visible.map(r => r.effort === null ? '—' : String(r.effort))
     const contexts = visible.map(r => contextLabel(r.context))
@@ -714,11 +714,11 @@ export const register: Register = on => {
     const workspaceLine = budget >= 1 && workspace
       ? <Text key="token-speed-workspace" color="inactive" wrap="truncate-end">
           {fitText(compact
-            ? `🌳 ${workspace.branch ?? workspace.name}`
-            : `🌳 ${workspace.name}${workspace.branch ? ` on ${workspace.branch}` : ''}`, e.props.bodyColumns)}
+            ? `⌂ ${workspace.branch ?? workspace.name}`
+            : `⌂ ${workspace.name}${workspace.branch ? ` on ${workspace.branch}` : ''}`, e.props.bodyColumns)}
         </Text>
       : null
-    const compactLabels = visible.map(r => r.id === 'main' ? '⚡ main' : shortId(r.id, state.rows))
+    const compactLabels = visible.map(r => r.id === 'main' ? '⚡ main' : `🌳 ${shortId(r.id, state.rows)}`)
     const narrowMain = visible.some(r => r.id === 'm') ? 'main' : 'm'
     const narrowLabels = visible.map(r => {
       if (r.id === 'main') return narrowMain
@@ -726,7 +726,7 @@ export const register: Register = on => {
       let length = 1
       while (length < chars.length && visible.some(other => other.id !== r.id
         && (other.id === 'main' ? narrowMain : other.id).startsWith(chars.slice(0, length).join('')))) length++
-      return chars.slice(0, length).join('')
+      return `🌳 ${chars.slice(0, length).join('')}`
     })
     const aligned = (text: string, size: number): string => multi ? padEndTo(text, size) : text
     return <Box flexDirection="column">

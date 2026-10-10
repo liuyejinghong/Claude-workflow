@@ -99,7 +99,7 @@ test('agent line shows effort tier colour and a uniform context meter without du
   expect(meter?.props.backgroundColor).toBe('rate_limit_empty')
   expect(meter?.text.length).toBe(10)
   expect(lines[0]?.text).not.toMatch(/[━─]/)
-  expect((await ui.findAll({ type: 'Text', text: /🌳/ })).length).toBe(1)
+  expect((await ui.findAll({ type: 'Text', text: /⌂/ })).length).toBe(1)
   expect((await command($)).text).toMatch('codex/gpt-6.1-sol')
   await ui.unmount()
 })
@@ -126,12 +126,12 @@ test('workspace line shows repository name on current branch', OPTIONS, async ($
   await $.session.start(START)
   await finishAt(clock, consume($.turn.step(request())), 500)
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  const line = await ui.find({ type: 'Text', text: '🌳' })
-  expect(line?.text).toMatch('🌳 Claude-workflow on feat/token-speed')
+  const line = await ui.find({ type: 'Text', text: '⌂' })
+  expect(line?.text).toMatch('⌂ Claude-workflow on feat/token-speed')
   await ui.unmount()
   const compact = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 49 } })
-  const compactLine = await compact.find({ type: 'Text', text: '🌳' })
-  expect(compactLine?.text).toBe('🌳 feat/token-speed')
+  const compactLine = await compact.find({ type: 'Text', text: '⌂' })
+  expect(compactLine?.text).toBe('⌂ feat/token-speed')
   await compact.unmount()
 })
 
@@ -141,8 +141,8 @@ test('workspace without a repository falls back to the session folder name', OPT
   await $.session.start(START)
   await finishAt(clock, consume($.turn.step(request())), 500)
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  const line = await ui.find({ type: 'Text', text: '🌳' })
-  expect(line?.text).toMatch('🌳 BTCKDJ')
+  const line = await ui.find({ type: 'Text', text: '⌂' })
+  expect(line?.text).toMatch('⌂ BTCKDJ')
   expect(line?.text).not.toMatch(' on ')
   await ui.unmount()
 })
@@ -158,8 +158,8 @@ test('parallel rows align their label and model columns; a lone row stays natura
   const lines = await ui.findAll({ type: 'Text', text: / · Live / })
   expect(lines.length).toBe(2)
   expect(lines[0]?.text).toMatch(/⚡ main\s+· gpt-6\.1-sol\s+· high\s+· Ctx/)
-  expect(lines[1]?.text).toMatch(/↳ long-ide · glm-5\.3\s+· —\s+· Ctx/)
-  const cells = (text: string): number => Array.from(text).reduce((sum, char) => sum + (char === '⚡' ? 2 : 1), 0)
+  expect(lines[1]?.text).toMatch(/🌳 long-ide · glm-5\.3\s+· —\s+· Ctx/)
+  const cells = (text: string): number => Array.from(text).reduce((sum, char) => sum + (char === '⚡' || char === '🌳' ? 2 : 1), 0)
   const prefix = (text: string, marker: string) => cells(text.slice(0, text.indexOf(marker)))
   expect(prefix(lines[0]?.text ?? '', '·')).toBe(prefix(lines[1]?.text ?? '', '·'))
   expect(prefix(lines[0]?.text ?? '', 'Live')).toBe(prefix(lines[1]?.text ?? '', 'Live'))
@@ -253,7 +253,7 @@ test('band budget preserves one complete agent line and places workspace last', 
   for (const [maxRows, workspace] of [[2, true], [3, true], [1, false]] as const) {
     const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, maxRows } })
     expect(Boolean(await ui.find({ type: 'Text', text: '45%/272k' }))).toBe(true)
-    expect(Boolean(await ui.find({ type: 'Text', text: '🌳' }))).toBe(workspace)
+    expect(Boolean(await ui.find({ type: 'Text', text: '⌂' }))).toBe(workspace)
     expect((await ui.findAll({ type: 'Text', text: / · Live / })).length).toBe(1)
     await ui.unmount()
   }
@@ -296,8 +296,8 @@ test('each child keeps latest CLI inputs and unknown denominator; only installed
   expect((await state($)).rows.find(r => r.id === 'child')?.context.tokens).toBe(5500)
   expect((await state($)).rows.find(r => r.id === 'child')?.effort).toBeNull()
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 240 } })
-  expect((await ui.find({ type: 'Text', text: /↳ child/ }))?.text).toMatch('5.5k/?')
-  expect((await ui.find({ type: 'Text', text: /↳ child/ }))?.text).not.toMatch('67%')
+  expect((await ui.find({ type: 'Text', text: /🌳 child/ }))?.text).toMatch('5.5k/?')
+  expect((await ui.find({ type: 'Text', text: /🌳 child/ }))?.text).not.toMatch('67%')
   expect((await main($)).context.percent).toBe(67)
   await ui.unmount()
   await $.session.compact({ trigger: 'precompute', agentId: 'child', messages })
@@ -318,7 +318,7 @@ test('fixed 10-cell block meter: 67 and 68 share a fill but keep distinct intege
   await $.session.start(START)
   await finishAt(clock, consume($.turn.step(request(undefined, 'high'))), 500)
   await finishAt(clock, consume($.turn.step({ ...request('provider/中文🙂', 'medium'), agentId: 'child' })), 500)
-  const cells = (text: string): number => Array.from(text).reduce((sum, char) => sum + (char === '⚡' || char === '🙂' || /[中⽂文]/u.test(char) ? 2 : 1), 0)
+  const cells = (text: string): number => Array.from(text).reduce((sum, char) => sum + (char === '⚡' || char === '🌳' || char === '🙂' || /[中⽂文]/u.test(char) ? 2 : 1), 0)
   let compact67 = ''
   let full67 = ''
   for (const columns of [80, 120, 240]) {
@@ -414,9 +414,9 @@ for (const live of [null, 42.1]) {
       const rows = (await ui.findAll({ type: 'Text' })).filter(node => node.props.wrap === 'truncate-end' && /(?: C| · Ctx )/.test(node.text))
       expect(rows.length).toBe(ids.length)
       expect(rows[0]?.text).toMatch(columns < 80 ? /^(⚡ main|m) / : /^⚡ main/)
-      expect(rows[1]?.text).toMatch(columns < 80 ? /^(alpha-wo|a) / : /^↳ alpha-wo/)
-      expect(rows[2]?.text).toMatch(columns < 80 ? /^(beta-wor|b) / : /^↳ beta-wor/)
-      expect(rows[3]?.text).toMatch(columns < 80 ? /^(gamma-wo|g) / : /^↳ gamma-wo/)
+      expect(rows[1]?.text).toMatch(columns < 80 ? /^(🌳 alpha-wo|🌳 a) / : /^🌳 alpha-wo/)
+      expect(rows[2]?.text).toMatch(columns < 80 ? /^(🌳 beta-wor|🌳 b) / : /^🌳 beta-wor/)
+      expect(rows[3]?.text).toMatch(columns < 80 ? /^(🌳 gamma-wo|🌳 g) / : /^🌳 gamma-wo/)
       for (const line of rows) {
         expect(line.text).not.toMatch(/[\r\n]/)
         expect(terminalCells(line.text)).toBeLessThanOrEqual(columns)
@@ -431,15 +431,16 @@ for (const live of [null, 42.1]) {
       }
       const mainLine = rows[0]?.text ?? ''
       expect(mainLine).toMatch(columns < 32 ? 'C42%' : '42%/272k')
-      expect(rows[2]?.text).toMatch('5.5k/?')
+      expect(rows[2]?.text).toMatch(columns < 80 ? /C(5\.5k\/)?\?/ : '5.5k/?')
+      expect(rows[2]?.text).not.toMatch(/C0|5\.5k\/0/)
       expect(rows[3]?.text).toMatch('—/?')
       if (columns === 49) {
         expect(mainLine).toBe(`⚡ main gpt-6.1-sol high C42%/272k L${live === null ? '—' : '~42.1'}`)
-        expect(rows[1]?.text).toMatch(/^alpha-wo very/)
+        expect(rows[1]?.text).toMatch(/^🌳 alpha-wo very/)
       }
       if (columns >= 32 && columns < 80) {
-        expect(rows[1]?.text.startsWith('alpha-wo ')).toBe(true)
-        expect(rows[2]?.text.startsWith('beta-wor ')).toBe(true)
+        expect(rows[1]?.text.startsWith('🌳 alpha-wo ')).toBe(true)
+        expect(rows[2]?.text.startsWith('🌳 beta-wor ')).toBe(true)
       }
       if (columns === 24 && live !== null) expect(mainLine).toBe('⚡ main C42%/272k L~42.1')
       if (columns < 80) {
@@ -490,9 +491,9 @@ test('narrow child prefixes remain distinct and exceptionally small bands fit wi
     const rows = (await ui.findAll({ type: 'Text' })).filter(node => node.props.wrap === 'truncate-end' && /(?: C| · Ctx )/.test(node.text))
     const first = rows[1]?.text ?? ''
     const second = rows[2]?.text ?? ''
-    expect(first.split(' ')[0]).not.toBe(second.split(' ')[0])
-    expect(first.startsWith('agent-on ')).toBe(true)
-    expect(second.startsWith('agent-tw ')).toBe(true)
+    expect(first.split(' ')[1]).not.toBe(second.split(' ')[1])
+    expect(first.startsWith('🌳 agent-on ')).toBe(true)
+    expect(second.startsWith('🌳 agent-tw ')).toBe(true)
     expect(rows[0]?.text.split(' ')[0]).not.toBe(rows[3]?.text.split(' ')[0])
     expect(terminalCells(first)).toBeLessThanOrEqual(columns)
     expect(terminalCells(second)).toBeLessThanOrEqual(columns)
@@ -569,7 +570,7 @@ test('child windows use only configured model tails; latest inputs, model switch
     expect((await state($)).rows.find(r => r.id === 'child')?.context).toEqual({ tokens: 136000, window: 1000000, percent: 14, source: 'cli-input-window-config' })
   }
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 240 } })
-  expect((await ui.find({ type: 'Text', text: /↳ child/ }))?.text).toMatch('14%/1.0M')
+  expect((await ui.find({ type: 'Text', text: /🌳 child/ }))?.text).toMatch('14%/1.0M')
   expect((await main($)).context.window).toBe(500000)
   expect((await command($)).text).toMatch('cli-input-window-config')
   await ui.unmount()

@@ -1,11 +1,11 @@
-# token-speed 0.4.0
+# token-speed 0.4.1
 
 适用于 Claude Code 2.1.294 的 function-hooks mod。在提示框上方，主控与每个活跃子代理各用一行显示模型、effort、上下文与输出速率，工作区放在最后一行。只观察原有请求，不调用额外模型、不引入 tokenizer 或网络请求；分支通过引擎 process API 调用本机 git。
 
 ```text
 ⚡ main · gpt-6.1-sol · high · Ctx ██████▊    67%/272k · Live ~42.1 · Last 31.2 · Avg 28.6 tok/s · streaming
-↳ abcdefg1 · glm-5.3-flash · max · Ctx █▍         14%/1.0M · Live ~35.2 · Last 29.1 · Avg 30.4 tok/s · streaming
-🌳 Claude-workflow on main
+🌳 abcdefg1 · glm-5.3-flash · max · Ctx █▍         14%/1.0M · Live ~35.2 · Last 29.1 · Avg 30.4 tok/s · streaming
+⌂ Claude-workflow on main
 ```
 
 主控始终第一，子代理按首次观察顺序每个一行，切换 view 不过滤。短 id 自动延长到可区分同会话代理；工具间隙保留行，Live 为 `—`，明确终态后隐藏，历史通过 `/tok-speed` 查询。带 survey 或 `maxRows=0` 时隐藏，其它插件和引擎的内容原样保留。只有主控时为代理行加工作区行，共两行；行数预算不足先丢工作区。
@@ -15,9 +15,10 @@
 ```text
 ⚡ main gpt-6.1-sol high C42%/272k L—
 ⚡ main C42%/272k L~42.1
+🌳 abc12345 中文🙂长模型 max C—/? L~0.0
 ```
 
-紧凑格式只保留一个实时速率 `L`（Live），手机端不再显示 Avg；Avg 仍在宽屏布局与 `/tok-speed` 中查看。主控标签为 `⚡ main`，与宽屏一致。`C` 为上下文、`L` 为 Live，Live 的估算标记 `~` 保留。紧凑行不画条形，不显示 Last/status，不给数字加对齐空格；按各行实际 cell 宽度先缩短模型至至少 4 格，再依次省略模型、effort、上下文窗口容量，保留百分比或未知标记，绝不把未知写成 0%。32 列及以上子代理保留原短 id；24–31 列必要时改用可见代理内可区分的最短前缀，主控可缩为 `m`。常规手机宽度优先完整保留上下文读数与 Live 数字及单位；异常长数值或不足 24 列时可再省略 Live，最终截断仅作保护。紧凑模式工作区行 `🌳` 只显示分支（无分支时显示仓库名）；宽屏保持 `🌳 仓库名 on 分支`。每次渲染重新计算预算，终端变宽后自动恢复完整布局。
+紧凑格式只保留一个实时速率 `L`（Live），手机端不再显示 Avg；Avg 仍在宽屏布局与 `/tok-speed` 中查看。主控标签为 `⚡ main`，与宽屏一致。`C` 为上下文、`L` 为 Live，Live 的估算标记 `~` 保留。紧凑行不画条形，不显示 Last/status，不给数字加对齐空格；按各行实际 cell 宽度先缩短模型至至少 4 格，再依次省略模型、effort、上下文窗口容量，保留百分比或未知标记，绝不把未知写成 0%。32 列及以上子代理保留原短 id；24–31 列必要时改用可见代理内可区分的最短前缀，主控可缩为 `m`。常规手机宽度优先完整保留上下文读数与 Live 数字及单位；异常长数值或不足 24 列时可再省略 Live，最终截断仅作保护。紧凑模式子代理行以 `🌳` 作前缀（worktree/子代理标识，宽屏与紧凑一致）；工作区行以 `⌂` 开头，紧凑模式只显示分支（无分支时显示仓库名），宽屏为 `⌂ 仓库名 on 分支`。每次渲染重新计算预算，终端变宽后自动恢复完整布局。
 
 宽度采用宿主提供的 `bodyColumns`，可能小于终端总列数。`[-]` 折叠标记、滚动和 `n more` 提示由 Claude Code 的 AbovePrompt 宿主管理；插件不改变其行数预算，有空余行才在代理之后显示工作区。
 
@@ -40,10 +41,10 @@ Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.eff
 /plugin install token-speed@claude-workflow-mods
 ```
 
-也可用固定 tag `token-speed-v0.4.0` 获取源文件，并从 checkout 加载：
+也可用固定 tag `token-speed-v0.4.1` 获取源文件，并从 checkout 加载：
 
 ```sh
-git clone --branch token-speed-v0.4.0 https://github.com/liuyejinghong/Claude-workflow.git
+git clone --branch token-speed-v0.4.1 https://github.com/liuyejinghong/Claude-workflow.git
 claude --plugin-dir ./Claude-workflow/mods/token-speed
 ```
 

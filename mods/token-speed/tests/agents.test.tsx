@@ -89,8 +89,8 @@ test('main plus three simultaneous children have four live rows in all views and
     const lines = await ui.findAll({ type: 'Text', text: /Live/ })
     expect(lines.length).toBe(4)
     expect(lines[0]?.text).toMatch(/⚡ main\s+· gpt-6\.1-sol/)
-    expect(lines[1]?.text).toMatch('↳ abcdefg1')
-    expect(lines[2]?.text).toMatch('↳ abcdefg2')
+    expect(lines[1]?.text).toMatch('🌳 abcdefg1')
+    expect(lines[2]?.text).toMatch('🌳 abcdefg2')
     expect((await ui.find({ type: 'Text', text: 'other mod' }))?.text).toBe('other mod')
     await ui.unmount()
   }
@@ -141,8 +141,8 @@ test('already-running agents are adopted with unknown model, tool gaps retain ro
   expect((await state($)).rows.some(r => r.id === 'idle-teammate')).toBe(false)
   let ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect((await ui.findAll({ type: 'Text', text: /Live/ })).length).toBe(2)
-  expect((await ui.find({ type: 'Text', text: /↳/ }))?.text).toMatch(/unknown · —\s+· Ctx/)
-  expect((await ui.find({ type: 'Text', text: /↳/ }))?.text).toMatch(/Live\s+—/)
+  expect((await ui.find({ type: 'Text', text: /🌳/ }))?.text).toMatch(/unknown · —\s+· Ctx/)
+  expect((await ui.find({ type: 'Text', text: /🌳/ }))?.text).toMatch(/Live\s+—/)
   await ui.unmount()
   const pending = consume($.turn.step(request('already-running', 'glm-5.3[1m]')))
   await clock.settle(); await clock.advance(500); await pending
@@ -162,7 +162,7 @@ test('already-running agents are adopted with unknown model, tool gaps retain ro
   await clock.advance(1000)
   expect((await loop($, 'already-running')).running).toBe(false)
   ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  expect((await ui.findAll({ type: 'Text', text: /↳/ })).length).toBe(0)
+  expect((await ui.findAll({ type: 'Text', text: /🌳/ })).length).toBe(0)
   await ui.unmount()
 })
 
