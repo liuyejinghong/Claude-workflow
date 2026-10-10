@@ -10,13 +10,13 @@
 | `gpt-6-astra` | `codex/gpt-6-astra:high` | `codex/gpt-6-astra:high` | high |
 | `glm-5.3` | `glm-5.3` | `glm-5.3[1m]` | max |
 | `glm-5.3-flash` | `glm-5.3-flash` | `glm-5.3-flash[1m]` | max |
-| `deepseek-v4.1-flash` | `group/deepseek-v4.1-flash` | `group/deepseek-v4.1-flash[1m]` | 未指定（上游 thinking 默认开启；effort 后缀未核验） |
+| `deepseek-v4.1-flash` | `group/deepseek-v4.1-flash:max` | `group/deepseek-v4.1-flash:max[1m]` | max |
 | `haiku-5.5` | `group/auto-claude-haiku-5-5:medium` | `group/auto-claude-haiku-5-5:medium[1m]` | medium |
 | `gemini-3.8-flash`（可选） | `commandcode/google/gemini-3.8-flash` | `commandcode/google/gemini-3.8-flash` | max |
 
-GPT 与 Haiku 使用冒号 effort，GLM 保持兼容裸名。`[1m]` 是 Claude Code 的窗口声明，由客户端剥离，不属于 Magpie 请求 route。Gemini 路由对外提供 low/medium/high 三档；agent 默认声明 `max`，该档位已随子代理实际调用验证可用，未核验其在各上游的最终映射细节。
+GPT、Haiku 与 DeepSeek 使用冒号 effort，GLM 保持兼容裸名。`[1m]` 是 Claude Code 的窗口声明，由客户端剥离，不属于 Magpie 请求 route。Gemini 路由对外提供 low/medium/high 三档；agent 默认声明 `max`，该档位已随子代理实际调用验证可用，未核验其在各上游的最终映射细节。
 
-Haiku 与 DeepSeek 使用 Magpie 聚合路由，由 Magpie 在 OpenCode Go 与 Command Code 之间选择渠道。两个聚合组均已通过 Anthropic Messages 工具往返 `tool_use → tool_result → end_turn`。已验证接受 `:medium` 的仅为 Haiku；DeepSeek 使用无 effort 后缀的 route，未测试 `:medium`。
+Haiku 与 DeepSeek 使用 Magpie 聚合路由，由 Magpie 在 OpenCode Go 与 Command Code 之间选择渠道。两个聚合组均已通过 Anthropic Messages 工具往返 `tool_use → tool_result → end_turn`。Haiku 已验证接受 `:medium`。DeepSeek 已于 2026-10-11 通过以下验收：直接 Messages 请求 `group/deepseek-v4.1-flash:max` 的 max 思考与工具往返（两轮通过）；新启动 CLI `--agent deepseek-v4.1-flash` 读取仓库定义并完成运行。Magpie 日志的入口 effort 可能显示为 high，应以 `tries` 中的实际 effort=max / fixed=max 为依据。Command Code 渠道未验收。已运行中的会话需重启或重载 agent 定义后才会使用新配置。
 
 短请求工具往返成功不能证明完整 CLI 兼容；本次 Haiku 聚合子代理实际调用报 Command Code `Invalid input at messages.1.role`，CLI 会话内的 `system` 被该渠道拒绝，待 Magpie 提供兼容回退或上游支持。
 

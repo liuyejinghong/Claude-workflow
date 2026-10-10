@@ -21,7 +21,7 @@ cat <<MSG
   1. 按 README 和 examples/magpie-routing.md 在 Magpie UI 统一确认上游与路由；Haiku 与 DeepSeek 走 Magpie 聚合路由（OpenCode Go 或 Command Code 任一可用即可）；Gemini 可选，需要 Command Code。
   2. 把 templates/CLAUDE.md.snippet 合并进 $DEST/CLAUDE.md，保留其他章节；重载常驻规则。
   3. 运行 scripts/verify.sh 仅检查模型列表；显式 --smoke 才发送 Haiku 生成请求验证工具往返。
-  4. 当前 GPT 使用 codex/...:high（272k、无 [1m]）；GLM 使用 [1m]；Haiku 为聚合路由 group/auto-claude-haiku-5-5:medium[1m]；DeepSeek V4.1 Flash 为聚合路由 group/deepseek-v4.1-flash[1m]，未设 effort 后缀。
+  4. 当前 GPT 使用 codex/...:high（272k、无 [1m]）；GLM 使用 [1m]；Haiku 为聚合路由 group/auto-claude-haiku-5-5:medium[1m]；DeepSeek V4.1 Flash 为聚合路由 group/deepseek-v4.1-flash:max[1m]（effort max）。
   5. 现有 agents 目录变化通常几秒后生效；若当前会话未识别新 agent，claude --continue 重启保留对话。
   6. 单次输出上限：Gemini 上游最高 65536。若 CLAUDE_CODE_MAX_OUTPUT_TOKENS 高于 65536 会 400，需将实际会话值调至 <=65536，例如 --settings '{"env":{"CLAUDE_CODE_MAX_OUTPUT_TOKENS":"65536"}}'（影响该会话全部模型）。本脚本不会修改该设置。
   分工与委托协议见 README.md 和 skills/multi-model-orchestration/SKILL.md。

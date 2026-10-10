@@ -2,7 +2,8 @@
 name: deepseek-v4.1-flash
 description: >-
   DeepSeek V4.1 Flash handles fast batches, parallel tasks, and long-context work with clear contracts and low risk: lookup, evidence extraction, summaries, documentation, mechanical edits, and specified tests. It uses the tools needed to complete its assignment. Investigation provides leads only; complex root causes, architecture, and high-risk decisions remain with the controller.
-model: "group/deepseek-v4.1-flash[1m]"
+model: "group/deepseek-v4.1-flash:max[1m]"
+effort: max
 color: orange
 ---
 
