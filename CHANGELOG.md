@@ -2,6 +2,20 @@
 
 本文件记录编排仓库的版本变化。版本号指本仓库，不对应模型版本。各 mod 使用独立版本，其详细变化记在对应 mod 的 CHANGELOG 中；此处的 "Mod 发布" 条目只作索引，发布 mod 不改变编排仓库版本。
 
+## Unreleased
+
+## 0.5.0 - 2026-10-11
+
+- 默认安装改为模型中立：`./install.sh` 只复制完整便携 skill 目录（含 `references/`、模型中立的角色资产与标准库 setup helper），不安装具名 agent、不改 settings、不写 `CLAUDE.md`、不要求 Magpie；`./install.sh --preset` 才额外安装 7 个示例 agent 并迁移旧档 `haiku-5.5-max`，备份改为不覆盖旧档的唯一备份。
+- 新增安装分支 `/multi-model-orchestration install`：scan 已配置候选（provider 中立，多来源只作来源观察）→ 按角色描述与证据匹配 worker / engineer / reviewer / visual / researcher / editor 六个模型中立角色 → 上下文检查（必经，写入可选）→ plan preview → 授权后 apply → 重载与本地 verify；始终提供 `inherit` 回退，没有模型列表也能继续；细节集中在新增 `references/installation.md`。
+- 全部具名子代理（7 个：6 个核心 + 可选 Gemini）统一为 max 推理，包含 `gpt-6.1-sol`、`gpt-6-astra`（路由改 `codex/...:max`，无 `[1m]`）与唯一的 `haiku-5.5`（`group/auto-claude-haiku-5-5:max[1m]`）；不按 effort 拆分代理。
+- Worker 分工定稿：`deepseek-v4.1-flash` 为常规编码执行默认（主控明确方案的实现、已知根因修复、测试、重构、调查取证、文档、批量与长上下文及多工具流程）；`glm-5.3-flash` 用于质量优先编码与原生多模态，可接受等待时选用；`haiku-5.5` 用于紧凑上下文与速度敏感的范围可控修复、局部审查；`glm-5.3` 保留纯编码/文本推演；`gpt-6-astra` 为深度研究、证明、仿真与独立第二意见，不设 Sol→Astra 升级梯度。
+- GLM 路由改用 zcode 限定名（`zcode/glm-5.3`、`zcode/glm-5.3-flash`）：独立日志核证裸名请求曾错落到其他渠道（commandcode claude-sonnet-5-5，status 400），限定名避免已观察到的错选。
+- 上下文写入只在安装分支的预览与授权后发生：默认不写窗口/压缩参数，plan 只合并选定的 `modelSettings` 与白名单 env 键；`always_delegate: true` 时把常驻规则那句恰好追加一次到 `CLAUDE.md`；写入前唯一备份，重复 apply 不重复写入。
+- `templates/CLAUDE.md.snippet` 精简为一句 skill 引用；README 重排为「通用默认安装 + 可选个人预设」，预设材料（`docs/haiku-vs-glm-flash.md`、`examples/magpie-routing.md`、workflow 冒烟示例）标注为示例环境证据而非普遍 benchmark；skill 增加便携可用性规则（完整 / 部分 / 无自定义代理 / 无 Agent 工具四种分支，高风险不因缺代理降级）与 `references/agents-and-installation.md`、`references/third-party-context.md` 两篇按需参考。
+- `scripts/verify.sh` 改为独立本地验证：默认只核对已安装 skill 文件与所选角色定义；`--models` 可选扫描已配置模型；`--smoke` 必须显式设置 `SMOKE_MODEL`（无默认模型）做一次工具往返；列表包含某模型不等于 CLI 兼容或压力测试通过。安全回归修复：冒烟请求的 curl 以 `-q` 为第一参数、禁读用户 `~/.curlrc`；修复合法引号 model 带行尾注释时漏扫的问题，保留精确 ID，仅拒绝非法尾部。
+- 验证范围：37 项合同测试（隔离安装、quoted scalar、curl 配置安全回归等）实际通过，Bash 语法与 diff 检查通过；本轮不含真实 provider 能力、1M 压力测试或性能结论，路由验证进展以 `examples/magpie-routing.md` 为准。
+
 ## 0.4.0 - 2026-10-09
 
 - 新增 `deepseek-v4.1-flash`，现有 7 个具名代理按明确合同与风险分工：GLM-5.3-Flash 为默认低风险批量 worker，DeepSeek 用于快速批量与长上下文，Haiku 用于快速明确的低复杂度任务；GLM-5.3 承担需更多推演的常规实现，Sol 承担复杂或高风险任务，Astra 承担最难任务，Gemini 保留文案/UI 专项边界。

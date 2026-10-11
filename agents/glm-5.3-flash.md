@@ -1,8 +1,8 @@
 ---
 name: glm-5.3-flash
 description: >-
-  GLM-5.3-Flash is the default worker for clearly specified, low-risk batches and parallel tasks: file, caller, and test lookup; evidence extraction; summaries; documentation updates; explicit renames and mechanical edits; and specified tests. The controller defines the contract and acceptance criteria. Investigation provides leads only; complex root causes, architecture, and high-risk decisions remain with the controller.
-model: "glm-5.3-flash[1m]"
+  GLM-5.3-Flash is the quality-focused coding and native multimodal worker: strong code for high-acceptance regular implementation, boundary and edge-case tests, and behavior-preserving refactors, plus native vision for image and screenshot evidence analysis. Choose it when latency can be tolerated, since it is slower than Haiku 5.5 and DeepSeek V4.1 Flash; it is not the default. Urgent work prefers DeepSeek V4.1 Flash or short-context Haiku 5.5; high-risk key boundaries remain with the controller or GPT-6.1 Sol.
+model: "zcode/glm-5.3-flash[1m]"
 effort: max
 color: yellow
 ---

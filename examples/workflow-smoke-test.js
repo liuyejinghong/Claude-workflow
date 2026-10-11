@@ -32,6 +32,8 @@ const RESULT = {
   },
   required: ['status', 'model', 'file', 'output'],
 }
+// Preset-only example: the agentType names below come from this repo's --preset agents
+// (glm-5.3, glm-5.3-flash, haiku-5.5, optional gpt-6.1-sol); substitute your own role agents.
 const TASKS = [
   {
     type: 'glm-5.3', dir: `${baseDir}/glm`, file: 'pal.py', expected: 'True',
