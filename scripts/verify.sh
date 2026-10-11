@@ -1,110 +1,182 @@
 #!/usr/bin/env bash
-# 默认仅检查模型列表；显式 --smoke 才消耗 Haiku 生成额度验证工具往返。
-# 使用现有环境凭据，不读取配置文件，不打印 key 或原始响应。
+# 根入口验证。
+# 默认：本地校验已安装 skill（调用 skill 自带 scripts/setup.py verify；无网络）。
+# --models：经 setup.py scan --query-models 扫描已配置模型；不要求固定 6 个模型。
+# --smoke：必须显式 SMOKE_MODEL（无默认模型）；Messages 工具两轮往返；不先 GET 模型列表。
+# 安全：不打印 key 或响应体；不跟随重定向；严格 2xx 检查；python3 -I；临时目录优先 CLAUDE_JOB_DIR/tmp。
 set -euo pipefail
 
-SMOKE=false
-case "${1:-}" in
-  "") ;;
-  --smoke) SMOKE=true ;;
-  --help|-h)
-    printf '%s\n' '用法：verify.sh [--smoke]' \
-      '默认 GET 模型列表；--smoke 验证 Haiku tool_use -> tool_result -> end_turn。' \
-      '环境：ANTHROPIC_BASE_URL、ANTHROPIC_AUTH_TOKEN 或 ANTHROPIC_API_KEY；可显式设置 SMOKE_MODEL。'
-    exit 0 ;;
-  *) printf '%s\n' '不支持的参数；用法：verify.sh [--smoke]' >&2; exit 2 ;;
-esac
-if [ "$#" -gt 1 ]; then
-  printf '%s\n' '参数过多；用法：verify.sh [--smoke]' >&2
-  exit 2
-fi
-: "${ANTHROPIC_BASE_URL:?ANTHROPIC_BASE_URL 未设置}"
-VERIFY_KEY="${ANTHROPIC_AUTH_TOKEN:-${ANTHROPIC_API_KEY:-}}"
-if [ -z "$VERIFY_KEY" ]; then
-  printf '%s\n' 'ANTHROPIC_AUTH_TOKEN 或 ANTHROPIC_API_KEY 未设置' >&2
-  exit 2
-fi
-VERIFY_BASE="$ANTHROPIC_BASE_URL"
-while [[ "$VERIFY_BASE" == */ ]]; do VERIFY_BASE="${VERIFY_BASE%/}"; done
-case "$VERIFY_BASE" in
-  */v1) VERIFY_API="$VERIFY_BASE" ;;
-  *) VERIFY_API="$VERIFY_BASE/v1" ;;
-esac
-VERIFY_MODEL="${SMOKE_MODEL:-group/auto-claude-haiku-5-5:medium}"
-VERIFY_TMP="$(mktemp -d "${TMPDIR:-/tmp}/claude-workflow-verify.XXXXXX")"
-trap 'rm -rf "$VERIFY_TMP"' EXIT
-H=(-H "Authorization: Bearer $VERIFY_KEY" -H "x-api-key: $VERIFY_KEY" \
-   -H "anthropic-version: 2023-06-01" -H 'content-type: application/json')
+usage() {
+  printf '%s\n' \
+    '用法：verify.sh [--models | --smoke | --help]' \
+    '  （无参数）本地校验已安装 skill：python3 -I <skill>/scripts/setup.py verify --config-dir <config>' \
+    '  --models  经 setup.py scan --query-models 扫描已配置模型（无 6 模型硬要求）' \
+    '  --smoke   显式 Messages 工具往返；必须设置 SMOKE_MODEL 为已确认的真实模型 ID' \
+    '配置目录：CLAUDE_HOME > CLAUDE_CONFIG_DIR > HOME/.claude。' \
+    '冒烟环境：ANTHROPIC_BASE_URL 与 ANTHROPIC_AUTH_TOKEN 或 ANTHROPIC_API_KEY；' \
+    'SMOKE_MODEL 的客户端 [1m] 标记发送前剥离，其余部分（含 provider :max 约定）保持原样。'
+}
 
-printf '%s\n' '模型列表（无生成请求）'
-# 不加 anthropic-version，避免兼容代理改写非 Claude 模型 ID。
-if ! curl -sS -f -m 20 "$VERIFY_API/models" \
-  -H "Authorization: Bearer $VERIFY_KEY" -H "x-api-key: $VERIFY_KEY" \
-  -o "$VERIFY_TMP/models.json"; then
-  printf '%s\n' '模型列表 HTTP/连接失败；检查当前路由服务。' >&2
-  exit 1
-fi
-python3 -I - "$VERIFY_TMP/models.json" "${SMOKE_MODEL:-}" <<'PY'
-import json
-import re
-import sys
+MODE="verify"
+for arg in "$@"; do
+  case "$arg" in
+    --models)
+      if [ "$MODE" != "verify" ]; then
+        printf '只接受一个模式参数（--models 或 --smoke）。\n' >&2
+        exit 2
+      fi
+      MODE="models"
+      ;;
+    --smoke)
+      if [ "$MODE" != "verify" ]; then
+        printf '只接受一个模式参数（--models 或 --smoke）。\n' >&2
+        exit 2
+      fi
+      MODE="smoke"
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      printf '不支持的参数：%s\n' "$arg" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
 
-try:
-    with open(sys.argv[1]) as source:
-        response = json.load(source)
-    if not isinstance(response, dict) or response.get("error") or response.get("type") == "error":
-        raise ValueError("模型列表返回 API 错误")
-    data = response.get("data")
-    if not isinstance(data, list):
-        raise ValueError("模型列表缺少 data 数组")
-    ids = {item["id"] for item in data if isinstance(item, dict) and isinstance(item.get("id"), str)}
-    haiku_ids = ("group/auto-claude-haiku-5-5", "opencode-go/claude-haiku-5-5")
-    if sys.argv[2]:
-        explicit = re.sub(r"\[1m\]$", "", sys.argv[2])
-        base = re.sub(r":(?:low|medium|high|xhigh|max)$", "", explicit)
-        haiku_ids = (explicit, base)
-    required = (
-        ("GPT-6.1 Sol", ("gpt-6.1-sol", "codex/gpt-6.1-sol")),
-        ("GPT-6 Astra", ("gpt-6-astra", "codex/gpt-6-astra")),
-        ("GLM-5.3", ("glm-5.3", "zcode/GLM-5.3")),
-        ("GLM-5.3-Flash", ("glm-5.3-flash", "zcode/GLM-5.3-Flash")),
-        ("Haiku 5.5", haiku_ids),
-        ("DeepSeek V4.1 Flash", ("group/deepseek-v4.1-flash", "opencode-go/deepseek-flash", "commandcode/deepseek/deepseek-v4.1-flash")),
-    )
-    missing = []
-    for label, candidates in required:
-        found = next((candidate for candidate in candidates if candidate in ids), None)
-        if found is None:
-            print(f"  缺失 {label}（候选：{', '.join(candidates)}）", file=sys.stderr)
-            missing.append(label)
-        else:
-            print(f"  OK {label}: {found}")
-    gemini = "commandcode/google/gemini-3.8-flash"
-    if gemini in ids:
-        print(f"  OK 可选 Gemini 3.8 Flash: {gemini}")
-    else:
-        print(f"  未接入可选 Gemini（{gemini}）；不影响其他 agent 与通过结果")
-    if missing:
-        raise SystemExit(1)
-except (OSError, ValueError, TypeError) as error:
-    print(f"模型列表解析失败：{error if not isinstance(error, json.JSONDecodeError) else '无效 JSON'}", file=sys.stderr)
-    raise SystemExit(1)
-PY
+config_dir() {
+  if [ -n "${CLAUDE_HOME:-}" ]; then
+    printf '%s' "$CLAUDE_HOME"
+  elif [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+    printf '%s' "$CLAUDE_CONFIG_DIR"
+  else
+    printf '%s' "$HOME/.claude"
+  fi
+}
 
-if [ "$SMOKE" = false ]; then
-  printf '%s\n' '通过：模型列表完整。未发送生成请求；使用 --smoke 显式验证 Haiku。'
-  exit 0
-fi
+run_helper() {
+  local dest="$1"
+  shift
+  local setup="$dest/skills/multi-model-orchestration/scripts/setup.py"
+  if [ ! -f "$setup" ]; then
+    printf '未找到已安装 skill 的 scripts/setup.py：%s\n' "$setup" >&2
+    printf '请先在仓库运行 ./install.sh 安装完整 skill（helper 只用 Python 标准库）。\n' >&2
+    exit 1
+  fi
+  python3 -I "$setup" "$@"
+}
 
-printf '%s\n' 'Haiku Messages 工具往返冒烟（消耗生成额度）'
-python3 -I - "$VERIFY_MODEL" "$VERIFY_TMP/request1.json" <<'PY'
+case "$MODE" in
+  verify)
+    DEST="$(config_dir)"
+    if [ "$DEST" != "/" ]; then
+      while [ "${DEST%/}" != "$DEST" ]; do DEST="${DEST%/}"; done
+    fi
+    printf '本地校验已安装 skill：%s/skills/multi-model-orchestration\n' "$DEST"
+    run_helper "$DEST" verify --config-dir "$DEST"
+    ;;
+  models)
+    DEST="$(config_dir)"
+    if [ "$DEST" != "/" ]; then
+      while [ "${DEST%/}" != "$DEST" ]; do DEST="${DEST%/}"; done
+    fi
+    printf '扫描已配置模型（setup.py scan --query-models；列表缺失按发现缺口处理，不合成模型）\n'
+    run_helper "$DEST" scan --query-models --config-dir "$DEST"
+    ;;
+  smoke)
+    MODEL="${SMOKE_MODEL:-}"
+    if [ -z "$MODEL" ]; then
+      printf '必须显式设置 SMOKE_MODEL 为已确认的真实模型 ID；不提供默认模型，不隐式使用 Haiku。\n' >&2
+      exit 2
+    fi
+    if [ -z "${ANTHROPIC_BASE_URL:-}" ]; then
+      printf 'ANTHROPIC_BASE_URL 未设置。\n' >&2
+      exit 2
+    fi
+    AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-}"
+    API_KEY_VALUE="${ANTHROPIC_API_KEY:-}"
+    if [ -z "$AUTH_TOKEN" ] && [ -z "$API_KEY_VALUE" ]; then
+      printf 'ANTHROPIC_AUTH_TOKEN 或 ANTHROPIC_API_KEY 未设置。\n' >&2
+      exit 2
+    fi
+
+    BASE="${ANTHROPIC_BASE_URL}"
+    while [ "${BASE%/}" != "$BASE" ]; do BASE="${BASE%/}"; done
+    case "$BASE" in
+      http://*@*|https://*@*)
+        printf '拒绝使用含用户信息的 ANTHROPIC_BASE_URL（凭据不进 URL）。\n' >&2
+        exit 2
+        ;;
+      http://*|https://*) ;;
+      *)
+        printf 'ANTHROPIC_BASE_URL 必须是 http(s) URL。\n' >&2
+        exit 2
+        ;;
+    esac
+    case "$BASE" in
+      */v1) API="$BASE" ;;
+      *) API="$BASE/v1" ;;
+    esac
+
+    # 只剥离客户端 [1m] 标记；不伪造、不添加 :max/[1m] 或任何路由前缀。
+    SEND_MODEL="$MODEL"
+    case "$MODEL" in
+      *'[1m]') SEND_MODEL="${MODEL%'[1m]'}" ;;
+    esac
+    if [ -z "$SEND_MODEL" ]; then
+      printf 'SMOKE_MODEL 剥离客户端 [1m] 标记后为空，拒绝发送。\n' >&2
+      exit 2
+    fi
+
+    if [ -n "${CLAUDE_JOB_DIR:-}" ]; then
+      TMP_ROOT="$CLAUDE_JOB_DIR/tmp"
+      mkdir -p "$TMP_ROOT"
+    else
+      TMP_ROOT="${TMPDIR:-/tmp}"
+      TMP_ROOT="${TMP_ROOT%/}"
+    fi
+    VERIFY_TMP="$(mktemp -d "$TMP_ROOT/claude-workflow-verify.XXXXXX")"
+    trap 'rm -rf "$VERIFY_TMP"' EXIT
+
+    H=(-H 'content-type: application/json' -H 'anthropic-version: 2023-06-01')
+    if [ -n "$AUTH_TOKEN" ]; then
+      H+=(-H "Authorization: Bearer $AUTH_TOKEN")
+    fi
+    if [ -n "$API_KEY_VALUE" ]; then
+      H+=(-H "x-api-key: $API_KEY_VALUE")
+    fi
+
+    printf '工具往返冒烟（发送生成请求，消耗额度）；冒烟模型：%s\n' "$SEND_MODEL"
+
+    post_messages() {
+      local body="$1"
+      local out="$2"
+      local label="$3"
+      local status
+      # -q 必须是 curl 之后的第一个参数：禁读用户 ~/.curlrc，避免 location/verbose 让冒烟跟随重定向并泄露凭据。
+      if ! status="$(curl -q -sS -m 60 --write-out '%{http_code}' -o "$out" "${H[@]}" --data-binary "@$body" "$API/messages")"; then
+        printf '%s：HTTP/连接失败（未打印响应体）；报告上游与可识别错误，不自动降级。\n' "$label" >&2
+        return 1
+      fi
+      case "$status" in
+        2[0-9][0-9]) return 0 ;;
+        *)
+          printf '%s：HTTP 状态 %s（严格 2xx 检查；不跟随重定向；未打印响应体）。\n' "$label" "$status" >&2
+          return 1
+          ;;
+      esac
+    }
+
+    python3 -I - "$SEND_MODEL" "$VERIFY_TMP/request1.json" <<'PY'
 import json
 import sys
 
 request = {
     "model": sys.argv[1],
     "max_tokens": 256,
-    "messages": [{"role": "user", "content": "Call route_marker with marker HAIKU_TOOL_OK. After its result, reply with exactly that returned marker and no other text."}],
+    "messages": [{"role": "user", "content": "Call route_marker with marker WORKFLOW_TOOL_OK. After its result, reply with exactly that returned marker and no other text."}],
     "tools": [{
         "name": "route_marker",
         "description": "Return the supplied marker to verify tool routing.",
@@ -116,12 +188,10 @@ with open(sys.argv[2], "w") as target:
     json.dump(request, target)
 PY
 
-if ! curl -sS -f -m 60 "$VERIFY_API/messages" "${H[@]}" \
-  --data-binary "@$VERIFY_TMP/request1.json" -o "$VERIFY_TMP/response1.json"; then
-  printf '%s\n' 'Haiku 首轮 HTTP/连接失败；报告上游及可识别窗口/错误，不自动降级或付费。' >&2
-  exit 1
-fi
-python3 -I - "$VERIFY_TMP/request1.json" "$VERIFY_TMP/response1.json" "$VERIFY_TMP/request2.json" <<'PY'
+    if ! post_messages "$VERIFY_TMP/request1.json" "$VERIFY_TMP/response1.json" '冒烟首轮'; then
+      exit 1
+    fi
+    python3 -I - "$VERIFY_TMP/request1.json" "$VERIFY_TMP/response1.json" "$VERIFY_TMP/request2.json" <<'PY'
 import json
 import sys
 
@@ -131,31 +201,29 @@ try:
     with open(sys.argv[2]) as source:
         response = json.load(source)
     if not isinstance(response, dict) or response.get("error") or response.get("type") == "error":
-        raise ValueError("Haiku 首轮返回 API 错误；报告上游及可识别窗口/错误，不自动降级或付费")
+        raise ValueError("首轮返回 API 错误；报告上游与可识别错误，不自动降级")
     if response.get("stop_reason") != "tool_use" or not isinstance(response.get("content"), list):
-        raise ValueError("Haiku 首轮未以 tool_use 结束")
+        raise ValueError("首轮未以 tool_use 结束")
     calls = [block for block in response["content"] if isinstance(block, dict) and block.get("type") == "tool_use"]
-    if len(calls) != 1 or calls[0].get("name") != "route_marker" or calls[0].get("input") != {"marker": "HAIKU_TOOL_OK"} or not calls[0].get("id"):
-        raise ValueError("Haiku 工具名/参数/ID 不符合合同")
+    if len(calls) != 1 or calls[0].get("name") != "route_marker" or calls[0].get("input") != {"marker": "WORKFLOW_TOOL_OK"} or not calls[0].get("id"):
+        raise ValueError("工具名/参数/ID 不符合合同")
     request["messages"].extend([
         {"role": "assistant", "content": response["content"]},
-        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": calls[0]["id"], "content": "HAIKU_TOOL_OK"}]},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": calls[0]["id"], "content": "WORKFLOW_TOOL_OK"}]},
     ])
     request["tool_choice"] = {"type": "auto"}
     with open(sys.argv[3], "w") as target:
         json.dump(request, target)
-    print("  OK 首轮：tool_use，工具名和输入正确")
+    print("  OK 首轮：tool_use，工具名与参数符合合同")
 except (OSError, ValueError, TypeError) as error:
     print(f"工具首轮验证失败：{error if not isinstance(error, json.JSONDecodeError) else '无效 JSON'}", file=sys.stderr)
     raise SystemExit(1)
 PY
 
-if ! curl -sS -f -m 60 "$VERIFY_API/messages" "${H[@]}" \
-  --data-binary "@$VERIFY_TMP/request2.json" -o "$VERIFY_TMP/response2.json"; then
-  printf '%s\n' 'Haiku 最终轮 HTTP/连接失败；报告上游及可识别窗口/错误，不自动降级或付费。' >&2
-  exit 1
-fi
-python3 -I - "$VERIFY_TMP/response2.json" <<'PY'
+    if ! post_messages "$VERIFY_TMP/request2.json" "$VERIFY_TMP/response2.json" '冒烟最终轮'; then
+      exit 1
+    fi
+    python3 -I - "$VERIFY_TMP/response2.json" <<'PY'
 import json
 import sys
 
@@ -163,18 +231,20 @@ try:
     with open(sys.argv[1]) as source:
         response = json.load(source)
     if not isinstance(response, dict) or response.get("error") or response.get("type") == "error":
-        raise ValueError("Haiku 最终轮返回 API 错误；报告上游及可识别窗口/错误，不自动降级或付费")
+        raise ValueError("最终轮返回 API 错误；报告上游与可识别错误，不自动降级")
     if response.get("stop_reason") != "end_turn" or not isinstance(response.get("content"), list):
-        raise ValueError("Haiku 最终轮未以 end_turn 结束")
+        raise ValueError("最终轮未以 end_turn 结束")
     blocks = response["content"]
     if any(not isinstance(block, dict) or block.get("type") == "tool_use" for block in blocks):
-        raise ValueError("Haiku 最终轮存在无效块或未结束的工具调用")
+        raise ValueError("最终轮存在无效块或未结束的工具调用")
     text = "".join(block.get("text", "") for block in blocks if block.get("type") == "text")
-    if text.strip() != "HAIKU_TOOL_OK":
-        raise ValueError("Haiku 最终响应内容不符合合同")
-    print("  OK 最终轮：end_turn，HAIKU_TOOL_OK")
-    print("通过：Haiku tool_use -> tool_result -> end_turn；这是协议冒烟，不是性能 A/B。")
+    if text.strip() != "WORKFLOW_TOOL_OK":
+        raise ValueError("最终响应内容不符合合同")
+    print("  OK 最终轮：end_turn，WORKFLOW_TOOL_OK")
+    print("通过：WORKFLOW_TOOL_OK tool_use -> tool_result -> end_turn（协议冒烟，不是性能 A/B）。")
 except (OSError, ValueError, TypeError) as error:
     print(f"工具最终轮验证失败：{error if not isinstance(error, json.JSONDecodeError) else '无效 JSON'}", file=sys.stderr)
     raise SystemExit(1)
 PY
+    ;;
+esac

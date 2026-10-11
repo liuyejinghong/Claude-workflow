@@ -1,28 +1,238 @@
 #!/usr/bin/env bash
-# 把 subagent 与 skill 安装到 ~/.claude（全局可用）。已存在的同名文件会先备份为 *.bak。
+# 安装可移植编排 skill；--preset 额外安装 7 个示例 agent 并迁移旧档 haiku-5.5-max.md。
+# 默认不改 settings/CLAUDE.md/agents；覆盖前为既有目标创建唯一备份，绝不删除旧 .bak。Bash 3.2 兼容。
+# 写入前先做一次简单预检（目标类型/符号链接/来源）；预检失败时不开始任何写入。
+# 不做多文件事务：失败时如实报告已完成的阶段与备份位置。
 set -euo pipefail
-SRC="$(cd "$(dirname "$0")" && pwd)"
-DEST="${CLAUDE_HOME:-$HOME/.claude}"
-mkdir -p "$DEST/agents" "$DEST/skills"
 
-for f in "$SRC"/agents/*.md; do
-  t="$DEST/agents/$(basename "$f")"
-  [ -e "$t" ] && cp "$t" "$t.bak"
-  cp "$f" "$t" && echo "agent  → $t"
+usage() {
+  printf '%s\n' \
+    '用法：install.sh [--preset] [--help]' \
+    '  默认：只复制完整 skill 目录（含 references/assets/scripts）到 <config>/skills/multi-model-orchestration' \
+    '  --preset：另安装 7 个示例 agent，并迁移旧档 haiku-5.5-max.md（唯一备份，不覆盖旧 .bak）' \
+    '配置目录：CLAUDE_HOME > CLAUDE_CONFIG_DIR > HOME/.claude；拒绝符号链接目标；' \
+    '备份命名 <原名>.bak.<时间戳>.<PID>（冲突时追加序号），不删除任何既有 .bak。'
+}
+
+PRESET=false
+for arg in "$@"; do
+  case "$arg" in
+    --preset) PRESET=true ;;
+    --help|-h) usage; exit 0 ;;
+    *)
+      printf '不支持的参数：%s\n' "$arg" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
 done
 
-s="$DEST/skills/multi-model-orchestration"
-[ -e "$s" ] && rm -rf "$s.bak" && mv "$s" "$s.bak"
-cp -R "$SRC/skills/multi-model-orchestration" "$s" && echo "skill  → $s"
+SRC="$(cd "$(dirname "$0")" && pwd)"
 
-cat <<MSG
+if [ -n "${CLAUDE_HOME:-}" ]; then
+  DEST="$CLAUDE_HOME"
+elif [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+  DEST="$CLAUDE_CONFIG_DIR"
+else
+  DEST="$HOME/.claude"
+fi
+if [ "$DEST" != "/" ]; then
+  while [ "${DEST%/}" != "$DEST" ]; do DEST="${DEST%/}"; done
+fi
 
-完成：已同步 7 个 agent 与编排 skill，未修改 settings 或上游配置。其中 gemini-3.8-flash 为可选专项（文案/UI），需要自行在 Magpie 配置 commandcode 路由。接下来：
-  1. 按 README 和 examples/magpie-routing.md 在 Magpie UI 统一确认上游与路由；Haiku 与 DeepSeek 走 Magpie 聚合路由（OpenCode Go 或 Command Code 任一可用即可）；Gemini 可选，需要 Command Code。
-  2. 把 templates/CLAUDE.md.snippet 合并进 $DEST/CLAUDE.md，保留其他章节；重载常驻规则。
-  3. 运行 scripts/verify.sh 仅检查模型列表；显式 --smoke 才发送 Haiku 生成请求验证工具往返。
-  4. 当前 GPT 使用 codex/...:high（272k、无 [1m]）；GLM 使用 [1m]；Haiku 为聚合路由 group/auto-claude-haiku-5-5:medium[1m]；DeepSeek V4.1 Flash 为聚合路由 group/deepseek-v4.1-flash:max[1m]（effort max）。
-  5. 现有 agents 目录变化通常几秒后生效；若当前会话未识别新 agent，claude --continue 重启保留对话。
-  6. 单次输出上限：Gemini 上游最高 65536。若 CLAUDE_CODE_MAX_OUTPUT_TOKENS 高于 65536 会 400，需将实际会话值调至 <=65536，例如 --settings '{"env":{"CLAUDE_CODE_MAX_OUTPUT_TOKENS":"65536"}}'（影响该会话全部模型）。本脚本不会修改该设置。
-  分工与委托协议见 README.md 和 skills/multi-model-orchestration/SKILL.md。
-MSG
+# 唯一备份路径：永不覆盖既有 .bak；时间戳+PID 冲突时追加序号。
+unique_backup_path() {
+  local base="$1.bak.$(date +%Y%m%d%H%M%S).$$"
+  local candidate="$base"
+  local n=1
+  while [ -e "$candidate" ] || [ -L "$candidate" ]; do
+    candidate="$base.$n"
+    n=$((n + 1))
+  done
+  printf '%s' "$candidate"
+}
+
+require_dir_target() {
+  if [ -L "$1" ]; then
+    printf '错误：%s（%s）是符号链接，拒绝写入。\n' "$1" "$2" >&2
+    exit 2
+  fi
+  if [ -e "$1" ] && [ ! -d "$1" ]; then
+    printf '错误：%s（%s）已存在且不是目录，未改动。\n' "$1" "$2" >&2
+    exit 2
+  fi
+}
+
+require_file_target() {
+  if [ -L "$1" ]; then
+    printf '错误：%s（%s）是符号链接，拒绝覆盖。\n' "$1" "$2" >&2
+    exit 2
+  fi
+  if [ -e "$1" ] && [ ! -f "$1" ]; then
+    printf '错误：%s（%s）已存在且不是普通文件，未改动。\n' "$1" "$2" >&2
+    exit 2
+  fi
+}
+
+# 失败/中断时可恢复：只清理本脚本用 mktemp 新建的暂存目录；
+# 若目标缺失而备份仍在（换入失败场景），还原备份。不声称多文件事务。
+stage_dir=""
+backup_dir=""
+install_target=""
+cleanup() {
+  code=$?
+  if [ -n "$stage_dir" ] && [ -e "$stage_dir" ]; then
+    rm -rf "$stage_dir"
+  fi
+  if [ "$code" -ne 0 ] && [ -n "$backup_dir" ] && [ -e "$backup_dir" ] \
+    && [ -n "$install_target" ] && [ ! -e "$install_target" ]; then
+    if mv "$backup_dir" "$install_target" 2>/dev/null; then
+      printf '错误：skill 安装未完成，已还原原目录（该目录未改动）。\n' >&2
+    else
+      printf '错误：skill 安装未完成且无法自动还原；原目录备份在 %s\n' "$backup_dir" >&2
+    fi
+  fi
+  return 0
+}
+trap cleanup EXIT
+
+# 简单预检：在任何写入之前检查全部将触碰的目标与来源。失败即退出，尚未开始写入。
+preflight() {
+  if [ -L "$DEST" ]; then
+    printf '错误：配置目录 %s 是符号链接，拒绝安装；请使用真实目录。\n' "$DEST" >&2
+    exit 2
+  fi
+  if [ -e "$DEST" ] && [ ! -d "$DEST" ]; then
+    printf '错误：配置目录 %s 已存在且不是目录，未改动。\n' "$DEST" >&2
+    exit 2
+  fi
+  if [ ! -d "$SRC/skills/multi-model-orchestration" ] || [ ! -f "$SRC/skills/multi-model-orchestration/SKILL.md" ]; then
+    printf '错误：仓库缺少 skill 目录或 SKILL.md（%s/skills/multi-model-orchestration），未安装。\n' "$SRC" >&2
+    exit 1
+  fi
+  require_dir_target "$DEST/skills" "skills 目录"
+  require_dir_target "$DEST/skills/multi-model-orchestration" "skill 目标"
+  if [ "$PRESET" = true ]; then
+    if [ ! -d "$SRC/agents" ]; then
+      printf '错误：仓库缺少 %s，未安装 preset agents。\n' "$SRC/agents" >&2
+      exit 1
+    fi
+    require_dir_target "$DEST/agents" "agents 目录"
+    local f
+    for f in "$SRC/agents"/*.md; do
+      [ -e "$f" ] || continue
+      require_file_target "$DEST/agents/$(basename "$f")" "agent 目标"
+    done
+    require_file_target "$DEST/agents/haiku-5.5-max.md" "旧档 haiku-5.5-max"
+  fi
+}
+
+install_skill() {
+  local src="$SRC/skills/multi-model-orchestration"
+  local parent="$DEST/skills"
+  local target="$parent/multi-model-orchestration"
+  local stage_root stage
+
+  require_dir_target "$parent" "skills 目录"
+  mkdir -p "$parent"
+  require_dir_target "$target" "skill 目标"
+
+  # 暂存目录用 mktemp 新建：唯一命名，绝不删除已存在的碰撞目录；失败清理只清这一份。
+  stage_root="$(mktemp -d "$parent/.multi-model-orchestration.stage.XXXXXX")"
+  stage="$stage_root/multi-model-orchestration"
+  stage_dir="$stage_root"
+  if ! cp -R "$src" "$stage"; then
+    rm -rf "$stage_root"
+    stage_dir=""
+    printf '错误：复制 skill 到暂存目录失败；目标未改动，未写入任何文件。\n' >&2
+    exit 1
+  fi
+
+  install_target="$target"
+  if [ -e "$target" ]; then
+    backup_dir="$(unique_backup_path "$target")"
+    mv "$target" "$backup_dir"
+  fi
+  if ! mv "$stage" "$target"; then
+    printf '错误：写入目标目录失败，尝试还原备份。\n' >&2
+    exit 1
+  fi
+  stage_dir=""
+  rmdir "$stage_root" 2>/dev/null || true
+
+  printf 'skill → %s\n' "$target"
+  if [ -n "$backup_dir" ]; then
+    printf '备份 → %s\n' "$backup_dir"
+  fi
+}
+
+install_preset_agents() {
+  local src_agents="$SRC/agents"
+  local parent="$DEST/agents"
+  local count=0
+  local f name t b
+
+  require_dir_target "$parent" "agents 目录"
+  mkdir -p "$parent"
+
+  for f in "$src_agents"/*.md; do
+    [ -e "$f" ] || continue
+    name="$(basename "$f")"
+    t="$parent/$name"
+    b=""
+    require_file_target "$t" "agent 目标"
+    if [ -e "$t" ]; then
+      b="$(unique_backup_path "$t")"
+      if ! cp -p "$t" "$b"; then
+        printf '错误：备份 %s 失败；安装不完整：skill 已安装、agent 已写入 %s 个；%s 未改动。\n' "$t" "$count" "$t" >&2
+        exit 1
+      fi
+      printf '备份 → %s\n' "$b"
+    fi
+    if ! cp "$f" "$t"; then
+      if [ -n "$b" ]; then
+        printf '错误：写入 %s 失败；安装不完整：skill 已安装、agent 已写入 %s 个；原文件备份在 %s。\n' "$t" "$count" "$b" >&2
+      else
+        printf '错误：写入 %s 失败；安装不完整：skill 已安装、agent 已写入 %s 个；该文件此前不存在，无备份。\n' "$t" "$count" >&2
+      fi
+      exit 1
+    fi
+    printf 'agent  → %s\n' "$t"
+    count=$((count + 1))
+  done
+
+  # 迁移：Haiku 双档已合并回唯一 haiku-5.5；移除旧别名，保留唯一备份（不覆盖已有 *.bak）。
+  local old="$parent/haiku-5.5-max.md"
+  require_file_target "$old" "旧档 haiku-5.5-max"
+  if [ -e "$old" ]; then
+    b="$(unique_backup_path "$old")"
+    if ! cp -p "$old" "$b"; then
+      printf '错误：迁移前备份 %s 失败；安装不完整：skill 已安装、%s 个 agent 已写入；旧档未改动。\n' "$old" "$count" >&2
+      exit 1
+    fi
+    if ! rm "$old"; then
+      printf '错误：移除旧档 %s 失败；安装不完整：skill 已安装、%s 个 agent 已写入；备份在 %s，旧档仍存在。\n' "$old" "$count" "$b" >&2
+      exit 1
+    fi
+    printf '迁移 → %s（已移除旧档 haiku-5.5-max.md）\n' "$b"
+  fi
+
+  printf 'preset：已安装 %s 个示例 agent；示例模型与路由需在你的环境确认后才可用。\n' "$count"
+}
+
+preflight
+install_skill
+if [ "$PRESET" = true ]; then
+  install_preset_agents
+fi
+
+printf '\n'
+printf '完成：可移植编排 skill 已安装到 %s/skills/multi-model-orchestration。\n' "$DEST"
+if [ "$PRESET" = true ]; then
+  printf 'preset 同时安装了 7 个示例 agent（示例路由不是安装前提，需按你的环境确认）。\n'
+fi
+printf '默认未改 settings、agents（preset 除外）与 CLAUDE.md。\n'
+printf '下一步（在 Claude Code 中执行）：\n'
+printf '  /multi-model-orchestration install\n'
+printf '按该 skill 的安装参考完成：扫描可用模型 → 角色/能力匹配 → 上下文选择 → preview 确认 → apply；未经确认不写配置。\n'
+printf '本地校验可用 scripts/verify.sh（--models 扫描；--smoke 需显式 SMOKE_MODEL）。\n'

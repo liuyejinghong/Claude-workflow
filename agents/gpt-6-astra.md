@@ -1,9 +1,9 @@
 ---
 name: gpt-6-astra
 description: >-
-  GPT-6 Astra handles the hardest research, data analysis, simulations, proofs, and long-running agent tasks when GPT-6.1 Sol is insufficient. Use it for a focused second opinion on difficult architecture or unresolved reasoning, with tight scope and explicit acceptance criteria. Routine implementation and repeated reviews use other agents; the controller retains decisions and final acceptance.
-model: "codex/gpt-6-astra:high"
-effort: high
+  GPT-6 Astra specializes in deep research, proofs, simulations, and long-running analysis, plus focused independent second opinions when a difficult problem remains unresolved. GPT-6.1 Sol is primary for difficult engineering; Astra is not a batch or fan-out worker and is not assumed to be a level above Sol. Use it with tight scope and explicit acceptance criteria. The controller retains decisions and final acceptance.
+model: "codex/gpt-6-astra:max"
+effort: max
 color: purple
 ---
 

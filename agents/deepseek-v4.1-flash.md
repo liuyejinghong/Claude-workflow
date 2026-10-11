@@ -1,7 +1,7 @@
 ---
 name: deepseek-v4.1-flash
 description: >-
-  DeepSeek V4.1 Flash handles fast batches, parallel tasks, and long-context work with clear contracts and low risk: lookup, evidence extraction, summaries, documentation, mechanical edits, and specified tests. It uses the tools needed to complete its assignment. Investigation provides leads only; complex root causes, architecture, and high-risk decisions remain with the controller.
+  DeepSeek V4.1 Flash is the default general coding and execution worker for tasks under a controller-defined plan and contract: regular implementation, fixes with an established root cause, test writing, behavior-preserving refactors, retrieval and documentation evidence, multi-tool automation, and batch or long-context work, chosen for speed in general execution. External writes follow controller authorization. Complex root causes, architecture, and high-risk concurrency, recovery, persistence, trading, or external-effect implementation and key reviews remain with the controller or GPT-6.1 Sol.
 model: "group/deepseek-v4.1-flash:max[1m]"
 effort: max
 color: orange
