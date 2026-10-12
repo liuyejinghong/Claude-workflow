@@ -9,7 +9,7 @@ const BAND: RenderPropsOf['AbovePrompt'] = { hasSurvey: false, isWorking: true, 
 const DAY = 24 * 60 * 60 * 1000
 const REPO: SessionRepo = { root: '/repos/Claude-workflow', remote: null, internal: false, name: 'liuyejinghong/Claude-workflow' }
 
-interface Setup { usage?: SessionUsage; repo?: SessionRepo | null; root?: string; git?: { exitCode: number; stdout: string }; model?: string; settings?: Record<string, unknown>; registry?: string; registryRead?: () => void }
+interface Setup { usage?: SessionUsage; repo?: SessionRepo | null; root?: string; git?: { exitCode: number; stdout: string }; model?: string; settings?: Record<string, unknown>; registry?: string; registryRead?: () => void; env?: Record<string, string> }
 const info = (id: string, status: AgentInfo['status'] = 'running'): AgentInfo => ({ id, status, description: `task ${id}`, type: 'worker' })
 const request = (model = 'codex/gpt-6.1-sol:high', effort?: TurnStepInput['effort'], index = 0): TurnStepInput => ({
   model, index, turnId: 'turn', messageCount: 1, ...(effort === undefined ? {} : { effort }),
@@ -21,7 +21,16 @@ const PROBE: Plugin = { name: 'session-probe', register(on) {
   on('command.run', { command: 'session-probe' }, async $ =>
     ({ text: JSON.stringify((await $.state.get({ plugin: 'token-speed', key: 'snapshot' })).value) }))
 } }
+// Rejects the plugin's environment reads from its own hook registration, as FAULT does for the clock;
+// the command reports how many reads were denied, proving the read really happened.
+const ENV_REJECT: Plugin = { name: 'env-reject', register(on) {
+  let denied = 0
+  on('env.get', async (_$, e, next) =>
+    e.name === 'CLAUDE_CODE_EFFORT_LEVEL' ? (denied++, { deny: 'environment unavailable' }) : next(e))
+  on('command.run', { command: 'env-reject-count' }, async () => ({ text: String(denied) }))
+} }
 const OPTIONS = { plugins: [PROBE] }
+const REJECTING = { plugins: [PROBE, ENV_REJECT] }
 async function command($: Engine, args = '') {
   return $.command.run({ command: 'tok-speed', args, origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })
 }
@@ -51,6 +60,8 @@ async function finishAt(clock: MockClock, pending: ReturnType<typeof consume>, m
 }
 function setup(on: On, held: Setup = {}, roster: () => Promise<AgentInfo[]> = async () => []): MockClock {
   const clock = mock.clock(on)
+  // A fixed environment keeps effort readings independent of the host running the tests.
+  mock.env(on, held.env ?? {})
   on('fs.read', async () => { held.registryRead?.(); return { value: held.registry ?? JSON.stringify({ version: 1, models: [], overrides: [
     { id: 'gpt-6.1-sol', aliases: [], window: 272000, reason: 'Test override' },
     { id: 'glm-5.3', aliases: [], window: 1000000, reason: 'Test override' },
@@ -655,4 +666,83 @@ test('partial session readings keep the last known main measurement and a model 
   expect((await main($)).context).toEqual(updated)
   await clock.advance(500)
   await pending
+})
+
+const EFFORT_SETTINGS = { effortLevel: 'high', modelSettings: { 'codex/gpt-6.1-sol': { effortLevel: 'high' } } }
+
+test('effort environment outranks the saved model configuration at session start without a request', OPTIONS, async ($, on) => {
+  setup(on, { model: 'codex/gpt-6.1-sol:high', settings: EFFORT_SETTINGS, env: { CLAUDE_CODE_EFFORT_LEVEL: 'max' } })
+  await $.session.start(START)
+  expect((await main($)).effort).toBe('max')
+  expect((await main($)).effortSource).toBe('configured')
+  const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect((await ui.find({ type: 'Text', text: / · Live / }))?.text).toMatch(/⚡ main\s+· gpt-6\.1-sol\s+· max\s+· Ctx/)
+  await ui.unmount()
+})
+
+interface EffortFallback { label: string; held: Setup; expected: 'high' | 'medium'; reject?: boolean }
+// No model suffix here: a fall-through that skipped the settings, or an unguarded
+// rejection, loses the model-specific high and fails these cases.
+const SPECIFIC_OVER_GLOBAL = { effortLevel: 'low', modelSettings: { 'codex/gpt-6.1-sol': { effortLevel: 'high' } } }
+for (const { label, held, expected, reject } of [
+  { label: 'unset', held: { model: 'codex/gpt-6.1-sol', settings: SPECIFIC_OVER_GLOBAL }, expected: 'high' },
+  { label: 'invalid', held: { model: 'codex/gpt-6.1-sol', settings: SPECIFIC_OVER_GLOBAL,
+    env: { CLAUDE_CODE_EFFORT_LEVEL: 'ultra' } }, expected: 'high' },
+  // Rejection is behavioural: an unrejected max would show, so the saved high proves the deny.
+  { label: 'rejected', held: { model: 'codex/gpt-6.1-sol', settings: SPECIFIC_OVER_GLOBAL,
+    env: { CLAUDE_CODE_EFFORT_LEVEL: 'max' } }, expected: 'high', reject: true },
+  { label: 'absent while a global default stays', held: { model: 'provider/worker:low', settings: { effortLevel: 'medium' } }, expected: 'medium' },
+  { label: 'absent while an explicit suffix stays', held: { model: 'provider/worker:high' }, expected: 'high' },
+] satisfies EffortFallback[]) {
+  test(`saved configuration answers an effort environment that is ${label}`, reject ? REJECTING : OPTIONS, async ($, on) => {
+    setup(on, held)
+    await $.session.start(START)
+    if (reject) {
+      const count = await $.command.run({ command: 'env-reject-count', args: '', origin: { kind: 'composer' },
+        presentation: { isFullscreen: true, columns: 120 } })
+      expect(Number(count.text)).toBeGreaterThan(0)
+    }
+    expect((await main($)).effort).toBe(expected)
+    expect((await main($)).effortSource).toBe('configured')
+  })
+}
+
+test('request and applied effort outrank the environment across refreshes and leave the real request untouched', OPTIONS, async ($, on) => {
+  const clock = setup(on, { model: 'codex/gpt-6.1-sol:high', settings: EFFORT_SETTINGS,
+    env: { CLAUDE_CODE_EFFORT_LEVEL: 'max' }, usage: { startedAt: 0, context: { window: 272000 }, rateLimits: [] } })
+  let calls = 0
+  let received: TurnStepInput | undefined
+  on('turn.step', async function* (_$, e) { calls++; received = e; await clock.sleep(500); return result(e) })
+  on('classic.PostToolUse', async () => ({}))
+  let stops = 0
+  on('classic.Stop', async () => { stops++; return {} })
+  await $.session.start(START)
+  expect((await main($)).effort).toBe('max')
+  expect((await main($)).effortSource).toBe('configured')
+  const e = request(undefined, 'high')
+  const pending = consume($.turn.step(e))
+  await clock.settle()
+  expect((await main($)).effort).toBe('high')
+  expect((await main($)).effortSource).toBe('request')
+  // A second of ticks runs the ordinary refreshMain: the environment must not roll it back.
+  await clock.advance(1000)
+  expect((await main($)).effort).toBe('high')
+  expect((await main($)).effortSource).toBe('request')
+  const observed = await pending
+  expect(calls).toBe(1)
+  expect(received).toEqual(e)
+  expect(observed.result).toEqual(result(e))
+  await $.classic.PostToolUse({ tool_name: 'Read', tool_input: {}, tool_response: {}, tool_use_id: 'r', effort: { level: 'medium' } })
+  expect((await main($)).effort).toBe('medium')
+  expect((await main($)).effortSource).toBe('applied')
+  await clock.advance(1000)
+  expect((await main($)).effort).toBe('medium')
+  expect((await main($)).effortSource).toBe('applied')
+  await $.classic.Stop({ stop_hook_active: true, effort: { level: 'medium' } })
+  expect(stops).toBe(1)
+  expect((await main($)).effort).toBe('medium')
+  expect((await main($)).effortSource).toBe('applied')
+  await clock.advance(1000)
+  expect((await main($)).effort).toBe('medium')
+  expect((await main($)).effortSource).toBe('applied')
 })

@@ -1,4 +1,4 @@
-# token-speed 0.4.2
+# token-speed 0.4.3
 
 适用于 Claude Code 2.1.296 的 function-hooks mod。在提示框上方，主控与每个活跃子代理各用一行显示模型、effort、上下文与输出速率，工作区放在最后一行。只观察原有请求，不调用额外模型、不引入 tokenizer 或网络请求；分支通过引擎 process API 调用本机 git。
 
@@ -30,7 +30,7 @@
 
 新增 provider/model 时，只添加具有官方 URL、核验日期和精确型号的记录；未核实的型号保持 unknown，或单独添加有理由的 local override。模型最大上下文不保证路由实际 cap，registry 不把最大值当默认。不复制主控百分比，数值超过窗口可显示超过 100%，只限制条形填充。成功安装的压缩清对应行输入读数，保留已知窗口；precompute 和 skip 不清。
 
-Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.effort`，`applied` 为 classic PostToolUse/Stop 的 `effort.level`，`configured` 为主控当前模型的 `modelSettings[model].effortLevel`、全局 `effortLevel` 或明确模型后缀。reload 后主控立即读取配置后备，无数据为 `—`；不硬编码 high，不扫描 agent 定义。配置档位不保证外部 provider 已应用。只选取 settings 的这些 effort 字段，不保存或打印其它 settings。
+Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.effort`，`applied` 为 classic PostToolUse/Stop 的 `effort.level`，`configured` 为主控当前模型的配置后备：先读取环境变量 `CLAUDE_CODE_EFFORT_LEVEL`，合法档位优先于 settings；变量缺失、不合法或读取失败时，依次回退到 `modelSettings[model].effortLevel`、全局 `effortLevel` 与明确模型后缀。reload 后主控立即读取配置后备，无数据为 `—`；不硬编码 high，不扫描 agent 定义。`request` 与 `applied` 读数仍优先于 `configured`（更可靠），且各自保留来源记录。`configured` 只是配置档位，不能当作上游实际应用的证据，外部 provider 是否已应用不保证。只选取 settings 的这些 effort 字段与上述环境变量，不保存或打印其它 settings 或环境变量。
 
 工作区为仓库根目录名（非 git 使用会话根目录名），附当前分支；detached HEAD 不显示分支，约每 5 秒刷新。显示使用 theme tokens：主控标签为 `claude`、子代理标签与行次要信息为 `inactive`；模型名为 `text`（普通文本，不着色）；有效 Live/Avg/Last 数字为 `text`，缺值为 `inactive`，速率不以 `success` 表示；effort 按档位着色（数值为 `subtle`）；状态 idle/waiting/streaming 为 `inactive`，aborted 为 `warning`，error 为 `error`，usage unavailable 为 `warning`。工作区行为 `inactive`。颜色跟随 CLI 主题。
 
@@ -41,10 +41,10 @@ Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.eff
 /plugin install token-speed@claude-workflow-mods
 ```
 
-也可用固定 tag `token-speed-v0.4.2` 获取源文件，并从 checkout 加载：
+也可用固定 tag `token-speed-v0.4.3` 获取源文件，并从 checkout 加载：
 
 ```sh
-git clone --branch token-speed-v0.4.2 https://github.com/liuyejinghong/Claude-workflow.git
+git clone --branch token-speed-v0.4.3 https://github.com/liuyejinghong/Claude-workflow.git
 claude --plugin-dir ./Claude-workflow/mods/token-speed
 ```
 
