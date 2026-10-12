@@ -616,7 +616,7 @@ test('bad packaged registry is observational and preserves confirmed CLI overrid
   on('turn.step', async function* (_$, e) { await clock.sleep(500); return result(e) })
   await $.session.start(START)
   await finishAt(clock, consume($.turn.step({ ...request('codex/gpt-6.1-sol'), agentId: 'child' })), 500)
-  expect((await state($)).rows.find(r => r.id === 'child')?.context.window).toBe(272000)
+  expect((await state($)).rows.find(r => r.id === 'child')?.context.window).toBe(500000)
   expect((await command($)).text).toMatch('load failed: confirmed overrides only')
 })
 

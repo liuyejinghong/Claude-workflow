@@ -7,7 +7,7 @@ Claude Code 自带成熟的原生子代理、并行执行与后台通知。本�
 | 组件 | 当前版本 | 入口 |
 |---|---|---|
 | multi-model-orchestration（skill） | 0.5.0 | [安装与配置](#安装与验证)：安装编排 skill，再把环境里的模型绑定到角色 |
-| token-speed（mod） | 0.4.1 | [会话与代理状态监控](mods/token-speed/README.md)：独立的实时代理面板 |
+| token-speed（mod） | 0.4.2 | [会话与代理状态监控](mods/token-speed/README.md)：独立的实时代理面板 |
 
 当前版本：[v0.5.0](VERSION) · [更新记录](CHANGELOG.md) · [MIT License](LICENSE)；token-speed 使用独立版本，其历史见 [mod 更新记录](mods/token-speed/CHANGELOG.md)。
 
@@ -111,12 +111,12 @@ claude --settings '{"env":{"CLAUDE_CODE_MAX_OUTPUT_TOKENS":"65536"}}'
 
 </details>
 
-## token-speed 0.4.1：会话与代理状态监控
+## token-speed 0.4.2：会话与代理状态监控
 
-[token-speed](mods/token-speed/README.md) 是独立的 Claude Code function-hooks mod（本版本在 CLI 2.1.294 上验证），不依赖 Magpie 或模型订阅；两个组件可独立安装，根目录 `./install.sh` 不安装 mod。它在输入框上方为每个活跃代理显示一行：
+[token-speed](mods/token-speed/README.md) 是独立的 Claude Code function-hooks mod（本版本在 CLI 2.1.296 上验证），不依赖 Magpie 或模型订阅；两个组件可独立安装，根目录 `./install.sh` 不安装 mod。它在输入框上方为每个活跃代理显示一行：
 
 ```text
-⚡ main · gpt-6.1-sol · max · Ctx ██████▊    67%/272k · Live ~42.1 · Last 31.2 · Avg 28.6 tok/s · streaming
+⚡ main · gpt-6.1-sol · max · Ctx ██████▊    67%/500k · Live ~42.1 · Last 31.2 · Avg 28.6 tok/s · streaming
 🌳 abcdefg1 · glm-5.3-flash · max · Ctx █▍         14%/1.0M · Live ~35.2 · Last 29.1 · Avg 30.4 tok/s · streaming
 ⌂ Claude-workflow on main
 ```
