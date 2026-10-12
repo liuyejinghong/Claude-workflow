@@ -6,6 +6,11 @@
 
 - Mod 更新：token-speed 0.4.2（不改变编排仓库版本）——`gpt-6.1-sol` 官方默认按 Tibo 2026-10-12 公告同步为 500000、max 1000000，读取失败后备 override 同步 500000；详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)。
 
+## Mod 发布：token-speed 0.4.3 - 2026-10-12
+
+- 修复启动时 effort 显示：以前漏读环境 effort 覆盖（`CLAUDE_CODE_EFFORT_LEVEL`），需要发送消息后才正确；现在首次显示即读取覆盖值，读取失败时回退原有配置顺序。
+- 详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.4.3` 说明），不改变编排仓库版本。
+
 ## 0.5.1 - 2026-10-12
 
 - 个人预设分工调整（示例预设）：`glm-5.3` 优先承担 Claude Code CLI 常规编码；`deepseek-v4.1-flash` 专注调研、定位与自动化，原由其负责的常规编码改由 `glm-5.3` 承担；紧凑、速度敏感的急修仍优先 `haiku-5.5`；`glm-5.3-flash` 保留为可选的视觉与质量编码。依据为用户实际使用体验，非受控排名；模型 ID 与 max effort 未改。

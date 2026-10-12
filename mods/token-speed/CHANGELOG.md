@@ -1,5 +1,13 @@
 # token-speed Changelog
 
+## 0.4.3
+
+对应 tag `token-speed-v0.4.3`。
+
+- 修复启动时 effort 显示：以前启动时漏读环境 effort 覆盖（`CLAUDE_CODE_EFFORT_LEVEL`），要发送消息后才显示正确；现在首次显示即读取覆盖值。
+- 环境变量合法时优先于 settings；缺失、不合法或读取失败时回退到原有模型专属、全局与后缀顺序。`request` 与 `applied` 读数仍优先，`configured` 只是配置档位，不能当作上游实际应用的证据。
+- `/tok-speed` 命令文本版本同步为 0.4.3。
+
 ## 0.4.2
 
 对应 tag `token-speed-v0.4.2`。
