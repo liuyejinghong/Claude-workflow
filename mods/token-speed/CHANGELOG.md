@@ -1,5 +1,12 @@
 # token-speed Changelog
 
+## 0.4.2
+
+对应 tag `token-speed-v0.4.2`。
+
+- `gpt-6.1-sol`：官方默认按 Tibo（@thsottiaux）2026-10-12 公告更新为 500000、max 1000000（Codex/Work 默认 500k、可覆盖至 1M；原帖 https://x.com/thsottiaux/status/2109430343346581527），读取或严格解析失败的后备 override 同步 500000；sourceURL 改为原帖，API 页保留在 additionalSources。
+- `/tok-speed` 命令文本版本同步为 0.4.2；`gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna` 与 API 元数据保持原值。
+
 ## 0.4.1
 
 对应 tag `token-speed-v0.4.1`。

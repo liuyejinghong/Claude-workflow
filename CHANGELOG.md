@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- Mod 更新：token-speed 0.4.2（不改变编排仓库版本）——`gpt-6.1-sol` 官方默认按 Tibo 2026-10-12 公告同步为 500000、max 1000000，读取失败后备 override 同步 500000；详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)。
+
 ## 0.5.0 - 2026-10-11
 
 - 默认安装改为模型中立：`./install.sh` 只复制完整便携 skill 目录（含 `references/`、模型中立的角色资产与标准库 setup helper），不安装具名 agent、不改 settings、不写 `CLAUDE.md`、不要求 Magpie；`./install.sh --preset` 才额外安装 7 个示例 agent 并迁移旧档 `haiku-5.5-max`，备份改为不覆盖旧档的唯一备份。

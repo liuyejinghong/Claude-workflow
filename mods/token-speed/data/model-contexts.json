@@ -116,12 +116,13 @@
     },
     {
       "id": "gpt-6.1-sol", "aliases": [],
-      "defaultWindow": 272000, "maxWindow": 872000,
+      "defaultWindow": 500000, "maxWindow": 1000000,
       "apiContextWindow": 1050000, "maxInputTokens": 922000,
-      "sourceScope": "official-codex-default",
-      "sourceURL": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json",
+      "sourceScope": "official-codex-work-default",
+      "sourceValue": "500k default (Codex & Work); max 1M",
+      "sourceURL": "https://x.com/thsottiaux/status/2109430343346581527",
       "additionalSources": ["https://developers.openai.com/api/docs/models/gpt-6.1-sol"],
-      "date": "2026-10-09"
+      "date": "2026-10-12"
     },
     {
       "id": "gpt-6-astra", "aliases": [],
@@ -179,7 +180,7 @@
     }
   ],
   "overrides": [
-    { "id": "gpt-6.1-sol", "aliases": [], "window": 272000, "reason": "User-confirmed CLI window" },
+    { "id": "gpt-6.1-sol", "aliases": [], "window": 500000, "reason": "User-confirmed CLI window" },
     { "id": "glm-5.3", "aliases": [], "window": 1000000, "reason": "User-confirmed CLI window" },
     { "id": "glm-5.3-flash", "aliases": [], "window": 1000000, "reason": "User-confirmed CLI window" }
   ]
