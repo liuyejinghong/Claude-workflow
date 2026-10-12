@@ -6,10 +6,10 @@ Claude Code 自带成熟的原生子代理、并行执行与后台通知。本�
 
 | 组件 | 当前版本 | 入口 |
 |---|---|---|
-| multi-model-orchestration（skill） | 0.5.0 | [安装与配置](#安装与验证)：安装编排 skill，再把环境里的模型绑定到角色 |
+| multi-model-orchestration（skill） | 0.5.1 | [安装与配置](#安装与验证)：安装编排 skill，再把环境里的模型绑定到角色 |
 | token-speed（mod） | 0.4.2 | [会话与代理状态监控](mods/token-speed/README.md)：独立的实时代理面板 |
 
-当前版本：[v0.5.0](VERSION) · [更新记录](CHANGELOG.md) · [MIT License](LICENSE)；token-speed 使用独立版本，其历史见 [mod 更新记录](mods/token-speed/CHANGELOG.md)。
+当前版本：[v0.5.1](VERSION) · [更新记录](CHANGELOG.md) · [MIT License](LICENSE)；token-speed 使用独立版本，其历史见 [mod 更新记录](mods/token-speed/CHANGELOG.md)。
 
 <a id="安装与验证"></a>
 
@@ -93,7 +93,7 @@ Claude Code 自带成熟的原生子代理、并行执行与后台通知。本�
 
 `./install.sh --preset` 在默认 skill 之外，追加安装本仓库参考环境的 7 个示例 agent（6 个核心 + 可选 Gemini，全部按 max 推理定义），并迁移旧档 `haiku-5.5-max`。这是一套可行的经验分工示例，不是通用安装要求；路由与凭据仍需按你的环境配置（参考链路为 Claude Code → Magpie → 各上游，通用安装不需要 Magpie）。
 
-示例中 `deepseek-v4.1-flash` 是常规编码执行主力，`gpt-6.1-sol` 负责困难、高风险实现与关键整体审查；完整分工与选型依据见 [模型分工与选型依据](docs/haiku-vs-glm-flash.md)，示例路由 ID 与验证记录见 [Magpie 路由示例](examples/magpie-routing.md)，各 agent 的任务边界以 [agents/](agents) 中的定义为准。
+示例中 `glm-5.3` 是 Claude Code CLI 常规编码主力，`deepseek-v4.1-flash` 负责调研取证、定位与工具自动化，`gpt-6.1-sol` 负责困难、高风险实现与关键整体审查；完整分工与选型依据见 [模型分工与选型依据](docs/haiku-vs-glm-flash.md)，示例路由 ID 与验证记录见 [Magpie 路由示例](examples/magpie-routing.md)，各 agent 的任务边界以 [agents/](agents) 中的定义为准。
 
 <a id="4-gemini-专项输出上限说明"></a>
 

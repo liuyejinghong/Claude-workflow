@@ -6,6 +6,10 @@
 
 - Mod 更新：token-speed 0.4.2（不改变编排仓库版本）——`gpt-6.1-sol` 官方默认按 Tibo 2026-10-12 公告同步为 500000、max 1000000，读取失败后备 override 同步 500000；详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)。
 
+## 0.5.1 - 2026-10-12
+
+- 个人预设分工调整（示例预设）：`glm-5.3` 优先承担 Claude Code CLI 常规编码；`deepseek-v4.1-flash` 专注调研、定位与自动化，原由其负责的常规编码改由 `glm-5.3` 承担；紧凑、速度敏感的急修仍优先 `haiku-5.5`；`glm-5.3-flash` 保留为可选的视觉与质量编码。依据为用户实际使用体验，非受控排名；模型 ID 与 max effort 未改。
+
 ## 0.5.0 - 2026-10-11
 
 - 默认安装改为模型中立：`./install.sh` 只复制完整便携 skill 目录（含 `references/`、模型中立的角色资产与标准库 setup helper），不安装具名 agent、不改 settings、不写 `CLAUDE.md`、不要求 Magpie；`./install.sh --preset` 才额外安装 7 个示例 agent 并迁移旧档 `haiku-5.5-max`，备份改为不覆盖旧档的唯一备份。
