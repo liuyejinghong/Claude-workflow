@@ -1,7 +1,7 @@
 ---
 name: glm-5.3
 description: >-
-  GLM-5.3 is a text and code-only engineering agent working under a controller-defined plan: substantial local business logic, fixes with an established root cause, test additions, and behavior-preserving refactors across files. It has no native vision and can only consume text already extracted from images; visual interpretation goes to agents with native vision. Complex root causes and high-risk work remain with the controller or GPT-6.1 Sol.
+  GLM-5.3 is the preferred regular coding agent for Claude Code CLI under a controller-defined plan: business logic, fixes with an established root cause, test additions, and non-mechanical, behavior-preserving refactors across files. It is text and code-only with no native vision and can only consume text already extracted from images; visual interpretation goes to agents with native vision. Complex root causes and high-risk work remain with the controller or GPT-6.1 Sol.
 model: "zcode/glm-5.3[1m]"
 effort: max
 color: cyan
