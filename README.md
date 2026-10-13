@@ -6,10 +6,10 @@ Claude Code 自带成熟的原生子代理、并行执行与后台通知。本�
 
 | 组件 | 当前版本 | 入口 |
 |---|---|---|
-| multi-model-orchestration（skill） | 0.5.1 | [安装与配置](#安装与验证)：安装编排 skill，再把环境里的模型绑定到角色 |
+| multi-model-orchestration（skill） | 0.5.2 | [安装与配置](#安装与验证)：安装编排 skill，再把环境里的模型绑定到角色 |
 | token-speed（mod） | 0.4.3 | [会话与代理状态监控](mods/token-speed/README.md)：独立的实时代理面板 |
 
-当前版本：[v0.5.1](VERSION) · [更新记录](CHANGELOG.md) · [MIT License](LICENSE)；token-speed 使用独立版本，其历史见 [mod 更新记录](mods/token-speed/CHANGELOG.md)。
+当前版本：[v0.5.2](VERSION) · [更新记录](CHANGELOG.md) · [MIT License](LICENSE)；token-speed 使用独立版本，其历史见 [mod 更新记录](mods/token-speed/CHANGELOG.md)。
 
 <a id="安装与验证"></a>
 

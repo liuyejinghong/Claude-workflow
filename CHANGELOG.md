@@ -6,6 +6,10 @@
 
 - Mod 更新：token-speed 0.4.2（不改变编排仓库版本）——`gpt-6.1-sol` 官方默认按 Tibo 2026-10-12 公告同步为 500000、max 1000000，读取失败后备 override 同步 500000；详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)。
 
+## 0.5.2 - 2026-10-13
+
+- 个人预设：`haiku-5.5` 与 `deepseek-v4.1-flash` 遇到模型调用报错时，默认改用 `glm-5.3-flash`，覆盖额度不足、限流等调用失败；模型路由 ID 与 max effort 保持不变。
+
 ## Mod 发布：token-speed 0.4.3 - 2026-10-12
 
 - 修复启动时 effort 显示：以前漏读环境 effort 覆盖（`CLAUDE_CODE_EFFORT_LEVEL`），需要发送消息后才正确；现在首次显示即读取覆盖值，读取失败时回退原有配置顺序。

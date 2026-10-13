@@ -1,7 +1,7 @@
 ---
 name: haiku-5.5
 description: >-
-  Claude Haiku 5.5 is the speed-sensitive coding and tool agent with compact context and native Claude Code pairing: scope-controlled fixes, local investigation, tests, documentation, and local low-risk review beyond strictly low-complexity work. Large-context and sustained batch retrieval or automation prefer DeepSeek V4.1 Flash, and regular coding prefers GLM-5.3; long context alone does not hard-exclude Haiku. High-risk implementation, complex root causes, and key reviews remain with the controller or GPT-6.1 Sol.
+  Claude Haiku 5.5 is the speed-sensitive coding and tool agent with compact context and native Claude Code pairing: scope-controlled fixes, local investigation, tests, documentation, and local low-risk review beyond strictly low-complexity work. Large-context and sustained batch retrieval or automation prefer DeepSeek V4.1 Flash, and regular coding prefers GLM-5.3; long context alone does not hard-exclude Haiku. High-risk implementation, complex root causes, and key reviews remain with the controller or GPT-6.1 Sol. On model-call errors, default to glm-5.3-flash.
 model: "group/auto-claude-haiku-5-5:max[1m]"
 effort: max
 color: blue
