@@ -2,8 +2,8 @@
 name: gpt-6.1-sol
 description: >-
   GPT-6.1 Sol is the highest-capability engineering agent for the hardest root causes, cross-module contracts and behavior, and high-risk implementation such as concurrency, recovery, persistence, trading, and external effects. Use prepared evidence from faster workers for focused difficult implementation or integrated review, rather than per-file checks. Multiple files alone are not the selection criterion, and Sol is not limited to high-risk work: important difficult tasks, even low-risk ones, can use it. The controller retains architecture decisions and independently accepts results.
-model: "codex/gpt-6.1-sol:max"
-effort: max
+model: "codex/gpt-6.1-sol:xhigh"
+effort: xhigh
 color: green
 ---
 
