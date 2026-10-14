@@ -6,6 +6,11 @@
 
 - Mod 更新：token-speed 0.4.2（不改变编排仓库版本）——`gpt-6.1-sol` 官方默认按 Tibo 2026-10-12 公告同步为 500000、max 1000000，读取失败后备 override 同步 500000；详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)。
 
+## 0.5.3 - 2026-10-14
+
+- 个人预设（小范围默认值变化）：示例 agent `gpt-6.1-sol` 的默认推理由 `max` 调为 `xhigh`，路由改为 `codex/gpt-6.1-sol:xhigh`、effort 为 `xhigh`；其余示例代理仍为 `max`，安装流程与 token-speed mod 不变。
+- README、编排手册、模型分工说明与 [Magpie 路由示例](examples/magpie-routing.md) 已同步为当前预设。路由核验只确认 xhigh 请求被接受并由 `gpt-6.1-sol` 实际服务，不代表 xhigh 相对 max 的质量、速度或成本收益。
+
 ## 0.5.2 - 2026-10-13
 
 - 个人预设：`haiku-5.5` 与 `deepseek-v4.1-flash` 遇到模型调用报错时，默认改用 `glm-5.3-flash`，覆盖额度不足、限流等调用失败；模型路由 ID 与 max effort 保持不变。

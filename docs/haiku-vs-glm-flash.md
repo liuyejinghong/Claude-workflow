@@ -4,7 +4,7 @@
 
 ## 当前分工
 
-全部具名子代理按 max 推理定义（6 个核心 + 可选 Gemini），不按 effort 拆分档位；选型顺序为风险与合同优先，其次模态、任务形态、上下文与延迟。
+具名子代理中 Sol 默认 xhigh，其余默认 max（6 个核心 + 可选 Gemini），不按 effort 拆分档位；选型顺序为风险与合同优先，其次模态、任务形态、上下文与延迟。
 
 - `deepseek-v4.1-flash`：调研与自动化主力——网络与文档调研、并发取证与有来源报告、代码/调用链/日志定位与问题线索、多工具自动化、批量与长上下文检索；速度快、覆盖广；常规编码优先 `glm-5.3`，紧凑急修用 `haiku-5.5`；高风险实施归 Sol。
 - `glm-5.3-flash`：质量优先的编码与原生多模态（图片/截图等）；编码能力强但明显较慢，能接受等待时选用；紧凑、速度敏感的编码优先 `haiku-5.5`，调研与自动化优先 DS，常规 CLI 编码优先 `glm-5.3`；不是只做机械任务，上游视觉未全部实测、不宣称已全部验证。
@@ -35,7 +35,7 @@ Luna 目前仅为候选（轻量、成本敏感场景可考虑）：未接入、
 
 ## 验证状态与历史观察
 
-路由验证事实单源在 [examples/magpie-routing.md](../examples/magpie-routing.md)：DeepSeek V4.1 Flash 的 max 路由已通过工具往返与 CLI 运行；GPT 系 `:max`（Sol、Astra）经临时只读定义的原生 CLI 验证 max 路由，最终仓库/本机定义配置已独立核对一致；合并后的本机唯一 `haiku-5.5` 已通过 `--agent haiku-5.5` 原生 CLI 加载冒烟（未用 `--agents` 覆盖），Magpie 日志 served 真实 Haiku、status 200、`tries` effort=max / fixed=max；仓库与本机定义一致性、安装迁移与重复安装演练均通过。受控读取冒烟不构成能力 A/B。未核验：服务商内部计算预算、CommandCode 渠道、各 max 档性能 A/B，不宣称所有供应商视觉均已实测。
+路由验证事实单源在 [examples/magpie-routing.md](../examples/magpie-routing.md)：DeepSeek V4.1 Flash 的 max 路由已通过工具往返与 CLI 运行；GPT 系 `:max`（Sol、Astra）经临时只读定义的原生 CLI 验证 max 路由（2026-10-11 历史记录；Sol 现默认 `:xhigh`，已于 2026-10-14 通过原生 CLI 最小回复冒烟，详见路由示例），最终仓库/本机定义配置已独立核对一致；合并后的本机唯一 `haiku-5.5` 已通过 `--agent haiku-5.5` 原生 CLI 加载冒烟（未用 `--agents` 覆盖），Magpie 日志 served 真实 Haiku、status 200、`tries` effort=max / fixed=max；仓库与本机定义一致性、安装迁移与重复安装演练均通过。受控读取冒烟不构成能力 A/B。未核验：服务商内部计算预算、CommandCode 渠道、各 max 档性能 A/B，不宣称所有供应商视觉均已实测。
 
 历史观察：
 

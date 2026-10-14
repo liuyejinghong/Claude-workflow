@@ -8,7 +8,7 @@
 
 | Agent | Magpie 请求 route | Agent `model` | 默认推理 |
 |---|---|---|---|
-| `gpt-6.1-sol` | `codex/gpt-6.1-sol:max` | `codex/gpt-6.1-sol:max` | max |
+| `gpt-6.1-sol` | `codex/gpt-6.1-sol:xhigh` | `codex/gpt-6.1-sol:xhigh` | xhigh |
 | `gpt-6-astra` | `codex/gpt-6-astra:max` | `codex/gpt-6-astra:max` | max |
 | `glm-5.3` | `zcode/glm-5.3` | `zcode/glm-5.3[1m]` | max |
 | `glm-5.3-flash` | `zcode/glm-5.3-flash` | `zcode/glm-5.3-flash[1m]` | max |
@@ -16,9 +16,11 @@
 | `haiku-5.5` | `group/auto-claude-haiku-5-5:max` | `group/auto-claude-haiku-5-5:max[1m]` | max |
 | `gemini-3.8-flash`（可选） | `commandcode/google/gemini-3.8-flash` | `commandcode/google/gemini-3.8-flash` | max |
 
-全部具名子代理按 max 推理定义，不按 effort 拆分代理。GPT、Haiku 与 DeepSeek 使用冒号 effort，GLM 使用 zcode 限定名以避免默认/粘滞渠道错选。`[1m]` 是 Claude Code 的窗口声明，由客户端剥离，不属于 Magpie 请求 route；`codex/gpt-6.1-sol:max` 与 `codex/gpt-6-astra:max` 无 `[1m]`。Gemini 路由对外提供多档 effort；agent 默认声明 `max`，该档位已随子代理实际调用验证可用，未核验其在各上游的最终映射细节。窗口、压缩与输出上限参数的区别与排查见 [references/third-party-context.md](../skills/multi-model-orchestration/references/third-party-context.md)。
+具名子代理中 Sol 默认 `xhigh`，其余默认 `max`，不按 effort 拆分代理。GPT、Haiku 与 DeepSeek 使用冒号 effort，GLM 使用 zcode 限定名以避免默认/粘滞渠道错选。`[1m]` 是 Claude Code 的窗口声明，由客户端剥离，不属于 Magpie 请求 route；`codex/gpt-6.1-sol:xhigh` 与 `codex/gpt-6-astra:max` 无 `[1m]`。Gemini 路由对外提供多档 effort；agent 默认声明 `max`，该档位已随子代理实际调用验证可用，未核验其在各上游的最终映射细节。窗口、压缩与输出上限参数的区别与排查见 [references/third-party-context.md](../skills/multi-model-orchestration/references/third-party-context.md)。
 
 ## 验证记录（2026-10-11）
+
+> 以下为 2026-10-11 时点的 max 口径历史记录，保留原实测事实。Sol 默认已于 2026-10-14 改为 `:xhigh`，其最小冒烟见下文“验证记录（2026-10-14）”。
 
 - 聚合路由与工具往返：Haiku 与 DeepSeek 走 Magpie 聚合路由，由 Magpie 在 OpenCode Go 与 Command Code 之间选择渠道。两个聚合组均已通过 Anthropic Messages 工具往返 `tool_use → tool_result → end_turn`。
 - DeepSeek V4.1 Flash：直接 Messages 请求 `group/deepseek-v4.1-flash:max` 的 max 思考与工具往返（两轮通过）；新启动 CLI `--agent deepseek-v4.1-flash` 使用仓库定义完成运行。Command Code 渠道未验收。
@@ -31,5 +33,11 @@
 历史观察：短请求工具往返成功不能证明完整 CLI 兼容；Haiku 聚合子代理实际 CLI 调用曾报 Command Code `Invalid input at messages.1.role`（会话内 `system` 被该渠道拒绝），待 Magpie 提供兼容回退或上游支持。
 
 **Gemini（可选）：** 使用 `commandcode` provider，需在 Magpie UI 中配置凭据与 route；仓库不包含用户凭据。该路由已完成连通与工具调用验证。未配置时 `gemini-3.8-flash` 子代理不可用，不影响其余 6 个核心 agent。Gemini 上游单次输出上限最高 65536，若 `CLAUDE_CODE_MAX_OUTPUT_TOKENS` 设置更高会报 400，启动设置见 [README](../README.md#4-gemini-专项输出上限说明)。
+
+## 验证记录（2026-10-14）
+
+- Sol 默认 `xhigh`：`claude --agent gpt-6.1-sol --print` 原生 CLI 加载本机定义成功，未用 `--agents` / `--model` / `--effort` 覆盖；退出码 0，返回 `SOL_XHIGH_OK`，单轮（`num_turns=1`），modelUsage 为 `codex/gpt-6.1-sol:xhigh`。
+- Magpie 转发日志：入口 effort 为 max，实际 `tries` 为 effort=xhigh / fixed=xhigh，status 200，served 为真实 `gpt-6.1-sol`；route 后缀 `:xhigh` 固定覆盖了传入的 max，以 `tries` 为准。
+- 边界：这是最小固定回复冒烟，未做工具往返，不是能力评测；只覆盖 Sol，Astra 与其余代理仍为 `max`，未测 xhigh。
 
 安装 agents 与接入检查见 [README](../README.md#安装与验证)。
