@@ -6,10 +6,10 @@ Claude Code 自带成熟的原生子代理、并行执行与后台通知。本�
 
 | 组件 | 当前版本 | 入口 |
 |---|---|---|
-| multi-model-orchestration（skill） | 0.5.3 | [安装与配置](#安装与验证)：安装编排 skill，再把环境里的模型绑定到角色 |
+| multi-model-orchestration（skill） | 0.5.4 | [安装与配置](#安装与验证)：安装编排 skill，再把环境里的模型绑定到角色 |
 | token-speed（mod） | 0.4.3 | [会话与代理状态监控](mods/token-speed/README.md)：独立的实时代理面板 |
 
-当前版本：[v0.5.3](VERSION) · [更新记录](CHANGELOG.md) · [MIT License](LICENSE)；token-speed 使用独立版本，其历史见 [mod 更新记录](mods/token-speed/CHANGELOG.md)。
+当前版本：[v0.5.4](VERSION) · [更新记录](CHANGELOG.md) · [MIT License](LICENSE)；token-speed 使用独立版本，其历史见 [mod 更新记录](mods/token-speed/CHANGELOG.md)。
 
 <a id="安装与验证"></a>
 
@@ -64,6 +64,7 @@ Claude Code 自带成熟的原生子代理、并行执行与后台通知。本�
 
 - 只装 skill、只绑定部分角色也能用：按实际工具目录里可用的代理与任务风险选择；普通任务可以由同一模型的新上下文承担，高风险或强审查缺能力匹配代理时报告缺口、不由弱代理顶替，没有 Agent 工具时不强行派发；完整分支规则见 [代理可用性与安装排查](skills/multi-model-orchestration/references/agents-and-installation.md)。
 - 同一模型可以在多个相互独立的新上下文里承担不同角色，实现与复核必须分开；普通子代理在独立的新上下文运行、不继承主会话的对话（fork 等继承模式除外），任务合同、路径与验收标准仍要写清楚，保持自包含 prompt。
+- 并行委托默认共享当前目录：写入任务按文件分工，同一文件同一时间只有一个写入者；范围重叠就串行交接，或在已授权时用 worktree 隔离，规则细节见 [「并发写入与交接」](skills/multi-model-orchestration/SKILL.md#并发写入与交接)。
 - 向导生成的 agent 定义使用 `effort: max` 并保留你确认的精确模型 ID 与原有后缀；不会自动添加 provider 前缀、`:max` 或 `[1m]`。
 - 默认按需使用，不需要修改 `CLAUDE.md`。希望每个会话都自动带上委托约定时，把 [templates/CLAUDE.md.snippet](templates/CLAUDE.md.snippet) 中的这一句合并进全局 `~/.claude/CLAUDE.md`（保留其他已有内容）：
 
