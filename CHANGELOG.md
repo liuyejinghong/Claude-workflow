@@ -6,6 +6,11 @@
 
 - Mod 更新：token-speed 0.4.2（不改变编排仓库版本）——`gpt-6.1-sol` 官方默认按 Tibo 2026-10-12 公告同步为 500000、max 1000000，读取失败后备 override 同步 500000；详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)。
 
+## Mod 发布：token-speed 0.4.4 - 2026-10-19
+
+- 补齐 MiniMax 两个精确尾名的本机窗口 override：`minimax-m3.1-flash-free` 与 alias `minimax-m3.1-flash-preview:free`，窗口 1000000。该数值来自本机 CLI 确认，不是官方公布容量，也未做压力验证；仅作上下文分母后备，官方 24 条记录不变。
+- 详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.4.4` 说明），不改变编排仓库版本。
+
 ## 0.5.4 - 2026-10-16
 
 - 并行委托共享当前目录时，每个文件同一时刻只允许一个活跃写入者；写入白名单须包含脚本、格式化器与生成文件等间接产物，白名单外的写入须暂停并交回主控。这是派发与交接约束，未引入强制文件锁。

@@ -182,6 +182,7 @@
   "overrides": [
     { "id": "gpt-6.1-sol", "aliases": [], "window": 500000, "reason": "User-confirmed CLI window" },
     { "id": "glm-5.3", "aliases": [], "window": 1000000, "reason": "User-confirmed CLI window" },
-    { "id": "glm-5.3-flash", "aliases": [], "window": 1000000, "reason": "User-confirmed CLI window" }
+    { "id": "glm-5.3-flash", "aliases": [], "window": 1000000, "reason": "User-confirmed CLI window" },
+    { "id": "minimax-m3.1-flash-free", "aliases": ["minimax-m3.1-flash-preview:free"], "window": 1000000, "reason": "Locally confirmed CLI window (2026-10-19)" }
   ]
 }
