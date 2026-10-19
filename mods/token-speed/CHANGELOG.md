@@ -1,5 +1,13 @@
 # token-speed Changelog
 
+## 0.4.4
+
+对应 tag `token-speed-v0.4.4`。
+
+- 补齐 MiniMax 两个精确尾名的本机窗口 override：`minimax-m3.1-flash-free` 与 alias `minimax-m3.1-flash-preview:free`，窗口 1000000，记为 `Locally confirmed CLI window (2026-10-19)`。存放于 registry 的 overrides，不写入官方 models 表，官方 24 条记录不变。
+- 该数值来自本机 CLI 确认，不是官方公布容量，也未做压力验证；仅作上下文分母后备。
+- `/tok-speed` 命令文本版本同步为 0.4.4；更新后 reload 生效。
+
 ## 0.4.3
 
 对应 tag `token-speed-v0.4.3`。
