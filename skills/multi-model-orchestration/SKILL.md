@@ -10,17 +10,34 @@ description: 多模型委托与安装配置：检查可用代理、写任务合�
 
 ## 选型与失败诊断
 
-- 仓库预设（`./install.sh --preset`）提供 7 个具名子代理（6 个核心 + 可选 Gemini），Sol 默认 xhigh，其余默认 max（包含 Astra）；不按 effort 拆分代理。用户环境已有的其他 agent 按其实际定义与 config，不自动等同 max。
-- 选型顺序：风险与合同优先，其次模态、任务形态、上下文与延迟；用户指定模型优先。
+- 按角色描述、能力与风险约束选型，以当前会话工具目录中实际可用的 agent 定义为准：风险与合同先于速度，其次模态、任务形态、上下文与延迟；用户指定模型优先。不按固定模型名或档位预设分工，不按 effort 拆分重复代理；用户环境已有的 agent 按其实际定义与 config，不自动等同任何固定档位。
 - 派发失败或产出不达验收时，由主控先诊断，再决定补合同或升级模型，不按固定模型链逐级尝试。
 
-按需证据：[模型分工与选型依据](https://github.com/liuyejinghong/Claude-workflow/blob/main/docs/haiku-vs-glm-flash.md) · [Magpie 路由示例（本仓库示例环境，非通用路由）](https://github.com/liuyejinghong/Claude-workflow/blob/main/examples/magpie-routing.md)。
+仓库 `--preset` 附带一套个人示例分工（维护者的 Magpie 接线，仅作参考，非通用约定）：<https://github.com/liuyejinghong/Claude-workflow/tree/main/examples/magpie>。
+
+## 角色卡（候选与优先级）
+
+配置在 `<config>/orchestration.json`（`CLAUDE_HOME` > `CLAUDE_CONFIG_DIR` > `~/.claude`），五个岗位 worker / engineer / reviewer / researcher / editor；每个岗位列原生 agent 候选与 priority（1 最高、10 最低，0 该岗位停用，同值按卡内顺序）。卡只定候选与顺序，不复制 model/effort/description，不改原生 agent 权限或定义。
+
+```text
+python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role ROLE]
+```
+
+- 主控每次派发前运行 `cards`（可用 `--role` 只读所选岗位），按当前表选候选；每次调用都重新读表，改 priority 不需 reload。
+- 未配置（整个文件缺失）：明确报告未配置，沿用原 description 选型。配置损坏：直接报告如何修复，不静默回退。
+- 配置文件存在但某岗位被省略、`candidates` 为空或全为 priority 0：该岗位没有可派发候选，报告缺口，不回退推荐模型，也不绕过 priority 0 去默认派发。
+- 选型：结合岗位定义与工具目录里 agent 的 description 判断适用性、模态与限定条件，在适用、已启用（priority ≥ 1）且已加载的候选里按 priority 选。本次用户指定模型优先，但不能默默启用 priority 0；要用停用项就改卡。
+- 派发时把所选岗位的 body（职责与交付合同）并入本次 prompt；岗位带 tools（如 editor 的 Read/Glob/Grep/Edit/Write）时在合同里显式写出工具范围。卡里的 tools 是合同说明，不是权限控制。
+- 卡维护的偏好排序优先于 description 或全局规则里「相对默认/备用」的措辞；职责范围、「仅用户指定才用」这类硬边界仍然有效。
+- 找不到能力匹配的候选就报告缺口并继续无依赖工作；执行中断或产出不达验收按「审查与返工」处理，不自动重跑。
+
+配置格式、写卡方式与迁移说明见 [references/role-cards.md](references/role-cards.md)。
 
 ## 可用代理
 
 目录里没有的代理不可派发（规则见首段），按以下方式处理：
 
-- 推荐代理缺失时，按现有代理的 description、能力与权限挑最接近的替代（Explore 只读，可做检索；低风险可用内置 general-purpose）；同模型在独立上下文执行也算职责委托，不停全部工作。
+- 推荐代理缺失时，按现有代理的 description、能力与权限挑最接近的替代（Explore 只读，可做检索；低风险可用内置 general-purpose）；同模型在独立上下文执行也算职责委托，不停全部工作。该替代只在卡未配置（无 `orchestration.json`）时适用；卡已配置时按卡选，替代不越过 priority 0。
 - 用户按名指定或必须使用的模型不可用、或现有代理能力不足时，说明缺口并继续无依赖工作，不静默替换、不降级硬做。
 - 无 Agent 工具时：规则不强制委托才由主控串行执行并显式切换独立验证视角；强制委托则报告缺口。
 - 普通使用不改 settings/provider/代理；需要安装或配置多角色时走 install 分支：先具体 preview，经授权才写入选定字段（见 [references/installation.md](references/installation.md)）；不代配路由与凭据。
@@ -29,13 +46,14 @@ description: 多模型委托与安装配置：检查可用代理、写任务合�
 
 用户调用该分支，或你需要按当前环境已配置的模型安装多角色代理时，按 [references/installation.md](references/installation.md) 执行：
 
-scan 已配置候选（provider 中立；无列表可用已有候选或 `inherit`，不虚构）→ 按角色描述匹配 worker / engineer / reviewer / visual / researcher / editor 并说明依据 → 上下文检查（必经，写入可选）→ plan 与 preview → 授权后 apply → 重载与本地最小验证。
+先做适用性检查（已确认 Claude 订阅且所需 Claude 模型全部可用时，推荐 Claude Code 原生子代理并结束角色配置；状态未知只查可验证信息或询问，不读凭据、不靠模型名断言）→ scan 已配置候选（provider 中立；无列表可用已有候选或 `inherit`，不虚构）→ 按角色描述与建议元数据拟定 worker / engineer / reviewer / researcher / editor 的匹配草表 → 上下文检查（必经，写入可选）→ plan 与 preview → 随 preview 呈现配置确认表（含真实文件动作与解析后的 effort 档位），用户一次确认授权后 apply → 重载与本地最小验证。
 
 - 这是 skill 分支，不是 Workflow 编排；普通任务不进入。
+- 已有可复用的原生 agent 时优先走角色卡轻量路径（见「角色卡」），不重跑安装扫描，也不为角色卡重配 provider、订阅或上下文参数；只有缺 agent 或要显式配置单模型入口才走本页。
 - 安装文件（默认 `./install.sh` 只装 skill）与配置角色是两件事。
 - 未看过具体 preview 不写入；verify 只做本地检查，不夸大为性能或压力结论。
 
-排查入口：缺代理与安装方式读 [references/agents-and-installation.md](references/agents-and-installation.md)；需要安装/配置角色读 [references/installation.md](references/installation.md)；第三方窗口/压缩问题读 [references/third-party-context.md](references/third-party-context.md)。
+排查入口：缺代理与安装方式读 [references/agents-and-installation.md](references/agents-and-installation.md)；需要安装/配置角色读 [references/installation.md](references/installation.md)；岗位候选与优先级读 [references/role-cards.md](references/role-cards.md)；第三方窗口/压缩问题读 [references/third-party-context.md](references/third-party-context.md)。
 
 ## 调用协议
 
@@ -64,6 +82,7 @@ scan 已配置候选（provider 中立；无列表可用已有候选或 `inherit
 工作目录：<绝对路径>
 目标：<完整任务与期望结果>
 背景：<相关架构、已知根因、已确定的方案或合同>
+岗位合同：<所选岗位 body 的职责与交付要求；岗位带 tools 时列出工具范围>
 可读范围：<需要读的绝对路径或目录>
 可写范围：<写入白名单：绝对路径或边界清晰的目录；只读任务填“无”>
 约束：<范围边界、不可改的接口、依赖与风格要求>；白名单外的写入暂停并交回主控
@@ -95,7 +114,7 @@ scan 已配置候选（provider 中立；无列表可用已有候选或 `inherit
 - `agent()` 的执行 stage 必须显式指定 `agentType`，且只用当前已加载的代理（见「可用代理」）；省略会使用主会话模型。
 - 选型依据仍是 agents 的 description；传 `agentType` 时不同时传 `model` / `effort`。
 - 审查 stage 不逐结果强制派固定代理；需要完整链路审查时，同一功能集成后做一次。
-- 若有可用的研究/专项代理（如 `gpt-6-astra`），只让它承担单个最难 stage，不进 fan-out。
+- 若有可用的研究/专项代理，只让它承担单个最难 stage，不进 fan-out。
 - 裁决、综合、最终验收 stage 不写 `agentType`，由主控执行。
 
 流程：并行执行 → 确认所有结果 → 集成与最小合同检查 → 必要的独立审查 → 主控验收。失败或缺失结果须处理，不能过滤后继续。写入 stage 的并行分工与交接同样遵守「并发写入与交接」。

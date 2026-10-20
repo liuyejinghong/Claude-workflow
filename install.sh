@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 安装可移植编排 skill；--preset 额外安装 7 个示例 agent 并迁移旧档 haiku-5.5-max.md。
+# 安装可移植编排 skill；--preset 额外安装 examples/magpie/agents 的 8 个示例 agent（Magpie 个人示例）并迁移旧档 haiku-5.5-max.md。
 # 默认不改 settings/CLAUDE.md/agents；覆盖前为既有目标创建唯一备份，绝不删除旧 .bak。Bash 3.2 兼容。
 # 写入前先做一次简单预检（目标类型/符号链接/来源）；预检失败时不开始任何写入。
 # 不做多文件事务：失败时如实报告已完成的阶段与备份位置。
@@ -9,9 +9,10 @@ usage() {
   printf '%s\n' \
     '用法：install.sh [--preset] [--help]' \
     '  默认：只复制完整 skill 目录（含 references/assets/scripts）到 <config>/skills/multi-model-orchestration' \
-    '  --preset：另安装 7 个示例 agent，并迁移旧档 haiku-5.5-max.md（唯一备份，不覆盖旧 .bak）' \
+    '  --preset：另安装 8 个示例 agent（examples/magpie/agents，本仓库 Magpie 个人示例），并迁移旧档 haiku-5.5-max.md（唯一备份，不覆盖旧 .bak）' \
     '配置目录：CLAUDE_HOME > CLAUDE_CONFIG_DIR > HOME/.claude；拒绝符号链接目标；' \
-    '备份命名 <原名>.bak.<时间戳>.<PID>（冲突时追加序号），不删除任何既有 .bak。'
+    'skill 备份：<config>/.workflow-backups/install-<唯一名>/multi-model-orchestration（目录权限 0700）；' \
+    'preset agent 备份：<原名>.bak.<时间戳>.<PID>（冲突时追加序号）；不删除任何既有备份。'
 }
 
 PRESET=false
@@ -112,14 +113,15 @@ preflight() {
   fi
   require_dir_target "$DEST/skills" "skills 目录"
   require_dir_target "$DEST/skills/multi-model-orchestration" "skill 目标"
+  require_dir_target "$DEST/.workflow-backups" "skill 备份根目录"
   if [ "$PRESET" = true ]; then
-    if [ ! -d "$SRC/agents" ]; then
-      printf '错误：仓库缺少 %s，未安装 preset agents。\n' "$SRC/agents" >&2
+    if [ ! -d "$SRC/examples/magpie/agents" ]; then
+      printf '错误：仓库缺少 %s，未安装 preset agents。\n' "$SRC/examples/magpie/agents" >&2
       exit 1
     fi
     require_dir_target "$DEST/agents" "agents 目录"
     local f
-    for f in "$SRC/agents"/*.md; do
+    for f in "$SRC/examples/magpie/agents"/*.md; do
       [ -e "$f" ] || continue
       require_file_target "$DEST/agents/$(basename "$f")" "agent 目标"
     done
@@ -131,7 +133,7 @@ install_skill() {
   local src="$SRC/skills/multi-model-orchestration"
   local parent="$DEST/skills"
   local target="$parent/multi-model-orchestration"
-  local stage_root stage
+  local stage_root stage backup_root backup_session
 
   require_dir_target "$parent" "skills 目录"
   mkdir -p "$parent"
@@ -150,7 +152,14 @@ install_skill() {
 
   install_target="$target"
   if [ -e "$target" ]; then
-    backup_dir="$(unique_backup_path "$target")"
+    # 完整 skill 备份必须留在 skills 之外，避免旧 SKILL.md 被 CLI 再次发现。
+    backup_root="$DEST/.workflow-backups"
+    require_dir_target "$backup_root" "skill 备份根目录"
+    mkdir -p "$backup_root"
+    chmod 700 "$backup_root"
+    backup_session="$(mktemp -d "$backup_root/install-XXXXXX")"
+    chmod 700 "$backup_session"
+    backup_dir="$backup_session/multi-model-orchestration"
     mv "$target" "$backup_dir"
   fi
   if ! mv "$stage" "$target"; then
@@ -167,7 +176,7 @@ install_skill() {
 }
 
 install_preset_agents() {
-  local src_agents="$SRC/agents"
+  local src_agents="$SRC/examples/magpie/agents"
   local parent="$DEST/agents"
   local count=0
   local f name t b
@@ -201,7 +210,7 @@ install_preset_agents() {
     count=$((count + 1))
   done
 
-  # 迁移：Haiku 双档已合并回唯一 haiku-5.5；移除旧别名，保留唯一备份（不覆盖已有 *.bak）。
+  # 迁移：清理已停用的旧别名 haiku-5.5-max；保留唯一备份（不覆盖已有 *.bak）。不改动用户自有的 haiku-5.5.md 等自定义 agent。
   local old="$parent/haiku-5.5-max.md"
   require_file_target "$old" "旧档 haiku-5.5-max"
   if [ -e "$old" ]; then
@@ -229,10 +238,11 @@ fi
 printf '\n'
 printf '完成：可移植编排 skill 已安装到 %s/skills/multi-model-orchestration。\n' "$DEST"
 if [ "$PRESET" = true ]; then
-  printf 'preset 同时安装了 7 个示例 agent（示例路由不是安装前提，需按你的环境确认）。\n'
+  printf 'preset 另安装了 8 个示例 agent（examples/magpie 的 Magpie 个人示例；示例路由不是安装前提，需按你的环境确认）。\n'
 fi
 printf '默认未改 settings、agents（preset 除外）与 CLAUDE.md。\n'
+printf '提示：已有 Claude 订阅且所需 Claude 模型全部可用时，直接使用 Claude Code 原生子代理即可，通常无需本项目的角色编排。\n'
 printf '下一步（在 Claude Code 中执行）：\n'
 printf '  /multi-model-orchestration install\n'
-printf '按该 skill 的安装参考完成：扫描可用模型 → 角色/能力匹配 → 上下文选择 → preview 确认 → apply；未经确认不写配置。\n'
+printf '按该 skill 的安装参考完成：适用性检查 → 扫描可用模型 → 角色匹配与上下文选择 → preview 连同配置确认表一次确认 → apply；未经确认不写配置。\n'
 printf '本地校验可用 scripts/verify.sh（--models 扫描；--smoke 需显式 SMOKE_MODEL）。\n'

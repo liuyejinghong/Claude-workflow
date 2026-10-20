@@ -1,5 +1,13 @@
 # token-speed Changelog
 
+## 0.4.5
+
+对应 tag `token-speed-v0.4.5`。
+
+- 补齐 DeepSeek free 档的精确尾名本机窗口 override：`deepseek-v4.1-flash-free`，窗口 1000000，记为 `Locally confirmed gateway window (2026-10-20)`。存放于 registry 的 overrides，不写入官方 models 表，官方 24 条记录不变；0.4.4 已收录的 MiniMax override 不重复添加。
+- 该数值来自本机网关实测，不是官方公布容量，也未做压力验证；仅作上下文分母后备。
+- `/tok-speed` 命令文本版本同步为 0.4.5；更新后 reload 生效。
+
 ## 0.4.4
 
 对应 tag `token-speed-v0.4.4`。

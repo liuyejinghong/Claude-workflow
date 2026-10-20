@@ -18,12 +18,15 @@ import urllib.request
 
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
-ROLE_NAMES = ("worker", "engineer", "reviewer", "visual", "researcher", "editor")
+ROLE_NAMES = ("worker", "engineer", "reviewer", "researcher", "editor")
 EDITOR_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write"]
 # Deliberately finite: a claude-* spelling alone does not establish a supported key.
 CANONICAL_MODELS = frozenset({
     "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1",
 })
+# Deliberately finite: the only effort levels current model recommendations support;
+# plan bindings may explicitly choose either one.
+EFFORT_LEVELS = ("xhigh", "max")
 MODEL_ENV = (
     "ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
     "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL",
@@ -35,25 +38,45 @@ CONTEXT_ENV = (
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS", "CLAUDE_CODE_DISABLE_1M_CONTEXT",
 )
+# User/wizard-confirmed facts only; scan never guesses them from local files or candidate IDs.
+SUBSCRIPTION_STATES = ("confirmed", "unavailable", "unknown")
+CLAUDE_AVAILABILITY_STATES = ("confirmed", "incomplete", "unknown")
 MAX_READ_BYTES = 2 * 1024 * 1024
 MAX_MODELS_BYTES = 1024 * 1024
 RUNTIME_NOTES = [
     "Configured or advertised model IDs are candidates, not proof of access, tool support or capability.",
     "Local observations do not resolve managed settings, active /model choices or CLI flags.",
 ]
+CARD_NOTES = [
+    "The current runtime tool catalog is authoritative for loaded native agent types; configured candidates "
+    "are not proof that an agent is loaded or available.",
+    "The controller identifies the task and role, checks each agent's description and constraints, "
+    "chooses a suitable model and performs final acceptance.",
+    "Priority 1 is highest and 10 lowest; equal priorities keep their listed order. Priority 0 disables "
+    "a candidate. There is no automatic dispatch, retry or fallback.",
+    "Read cards again before every delegation; this command reads the current file without caching.",
+]
 PLAN_EXAMPLE = '''{
+  "orchestration": {
+    "version": 1,
+    "roles": {
+      "worker": {
+        "candidates": [{"agent": "minimax-m3.1-flash-free", "priority": 1}]
+      },
+      "reviewer": {
+        "candidates": [{"agent": "gpt-6.1-sol", "priority": 1}]
+      }
+    }
+  }
+}'''
+COMPAT_PLAN_EXAMPLE = '''{
   "roles": {
     "worker": {"model": "inherit"},
-    "reviewer": {"model": "exact-confirmed-id", "notes": "optional confirmed strength/limit"}
+    "reviewer": {"model": "exact-confirmed-id", "effort": "xhigh", "notes": "optional confirmed strength/limit"}
   },
   "context": {
     "modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 200000}},
-    "env": {
-      "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000",
-      "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "272000",
-      "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "65536",
-      "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"
-    }
+    "env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"}
   },
   "always_delegate": false
 }'''
@@ -119,6 +142,11 @@ def valid_model(value):
             and all(char.isprintable() and not char.isspace() for char in value))
 
 
+def valid_recommendation_reason(value):
+    return (isinstance(value, str) and 0 < len(value) <= 500
+            and value.isprintable() and value == value.strip())
+
+
 def check_keys(value, allowed, label):
     if not isinstance(value, dict) or set(value) - set(allowed):
         raise SetupError(f"{label} must be an object containing only supported fields.")
@@ -150,14 +178,61 @@ def valid_window(value):
     return value == "auto" or (type(value) is int and 100000 <= value <= 1000000)
 
 
+def check_role_names(roles, label):
+    if isinstance(roles, dict) and "visual" in roles:
+        raise SetupError("The visual role has been removed; assign visual evidence to a suitable native "
+                         "agent with confirmed vision under one of the five roles, without a separate visual role.")
+    if not isinstance(roles, dict) or set(roles) - set(ROLE_NAMES):
+        raise SetupError(f"{label} must be an object containing only: " + ", ".join(ROLE_NAMES) + ".")
+
+
+def valid_agent_type(value):
+    return (isinstance(value, str) and bool(value) and value not in (".", "..")
+            and "/" not in value and "\\" not in value
+            and all(char.isprintable() and not char.isspace() for char in value))
+
+
+def validate_orchestration(configuration):
+    check_keys(configuration, ("version", "roles"), "orchestration")
+    if set(configuration) != {"version", "roles"}:
+        raise SetupError("orchestration requires exactly version and roles.")
+    if type(configuration["version"]) is not int or configuration["version"] != 1:
+        raise SetupError("orchestration.version must be the integer 1.")
+    roles = configuration["roles"]
+    check_role_names(roles, "orchestration.roles")
+    for role, card in roles.items():
+        check_keys(card, ("candidates",), f"orchestration role {role}")
+        if set(card) != {"candidates"} or not isinstance(card["candidates"], list):
+            raise SetupError(f"orchestration role {role} requires exactly a candidates array, which may be empty.")
+        seen_agents = set()
+        for index, candidate in enumerate(card["candidates"]):
+            label = f"orchestration role {role} candidate {index}"
+            check_keys(candidate, ("agent", "priority"), label)
+            if set(candidate) != {"agent", "priority"}:
+                raise SetupError(f"{label} requires exactly agent and priority.")
+            if not valid_agent_type(candidate["agent"]):
+                raise SetupError(f"{label} requires an exact native agent type without whitespace, controls or paths.")
+            priority = candidate["priority"]
+            if type(priority) is not int or not 0 <= priority <= 10:
+                raise SetupError(f"{label} priority must be an integer from 0 to 10.")
+            if candidate["agent"] in seen_agents:
+                raise SetupError(f"orchestration role {role} contains a duplicate agent.")
+            seen_agents.add(candidate["agent"])
+    return configuration
+
+
 def validate_plan(plan):
-    check_keys(plan, ("roles", "context", "always_delegate"), "Plan")
+    check_keys(plan, ("roles", "context", "always_delegate", "orchestration"), "Plan")
+    if "orchestration" in plan:
+        validate_orchestration(plan["orchestration"])
     roles = plan.get("roles", {})
-    check_keys(roles, ROLE_NAMES, "roles")
+    check_role_names(roles, "roles")
     for role, binding in roles.items():
-        check_keys(binding, ("model", "notes"), f"Role {role}")
+        check_keys(binding, ("model", "notes", "effort"), f"Role {role}")
         if not valid_model(binding.get("model")):
             raise SetupError(f"Role {role} requires a nonempty model ID without whitespace or controls.")
+        if "effort" in binding and binding["effort"] not in EFFORT_LEVELS:
+            raise SetupError(f"Role {role} effort must be one of: " + ", ".join(EFFORT_LEVELS) + ".")
         if "notes" in binding:
             note = binding["notes"]
             if not isinstance(note, str) or len(note) > 500 or not note.isprintable():
@@ -182,12 +257,12 @@ def validate_plan(plan):
     return plan
 
 
-def load_assets():
-    assets = load_json(SKILL_ROOT / "assets" / "roles.json")
+def validate_assets(assets):
     if not isinstance(assets, dict) or set(assets) != set(ROLE_NAMES):
-        raise SetupError("Role assets must contain exactly the six documented neutral roles.")
+        raise SetupError("Role assets must contain exactly the five documented neutral roles: "
+                         + ", ".join(ROLE_NAMES) + ".")
     for role, asset in assets.items():
-        check_keys(asset, ("name", "description", "body", "tools"), f"Asset {role}")
+        check_keys(asset, ("name", "description", "body", "tools", "recommended_models"), f"Asset {role}")
         if asset.get("name") != "workflow-" + role:
             raise SetupError(f"Asset {role} has an invalid generated name.")
         if not isinstance(asset.get("description"), str) or not asset["description"].isprintable():
@@ -202,7 +277,67 @@ def load_assets():
                 raise SetupError(f"Asset {role} has an invalid tools list.")
         if role == "editor" and asset.get("tools") != EDITOR_TOOLS:
             raise SetupError("The editor asset must restrict tools to Read/Glob/Grep/Edit/Write.")
+        recommendations = asset.get("recommended_models")
+        if not isinstance(recommendations, list) or not recommendations:
+            raise SetupError(f"Asset {role} requires a nonempty recommended_models array.")
+        seen_models = set()
+        for index, item in enumerate(recommendations):
+            if not isinstance(item, dict) or set(item) != {"model", "reason", "effort"}:
+                raise SetupError(
+                    f"Asset {role} recommendation {index} must be an object containing exactly "
+                    "model, reason and effort.")
+            if not valid_model(item["model"]):
+                raise SetupError(f"Asset {role} recommendation {index} has an invalid model ID.")
+            if not valid_recommendation_reason(item["reason"]):
+                raise SetupError(
+                    f"Asset {role} recommendation {index} requires a nonempty single-line reason "
+                    "without surrounding whitespace.")
+            if item["effort"] not in EFFORT_LEVELS:
+                raise SetupError(f"Asset {role} recommendation {index} effort must be one of: "
+                                 + ", ".join(EFFORT_LEVELS) + ".")
+            if item["model"] in seen_models:
+                raise SetupError(f"Asset {role} recommends a duplicate model.")
+            seen_models.add(item["model"])
     return assets
+
+
+def load_assets():
+    return validate_assets(load_json(SKILL_ROOT / "assets" / "roles.json"))
+
+
+def load_orchestration(config_dir):
+    path = config_dir / "orchestration.json"
+    original, _mode, _fingerprint = snapshot(path)
+    return None if original is None else validate_orchestration(parse_json(original, str(path)))
+
+
+def role_cards(assets, configuration, role=None):
+    configured_roles = {} if configuration is None else configuration["roles"]
+    result = []
+    for name in ROLE_NAMES:
+        if role is not None and name != role:
+            continue
+        asset = assets[name]
+        candidates = configured_roles.get(name, {}).get("candidates", [])
+        card = {"role": name, "description": asset["description"], "body": asset["body"]}
+        if "tools" in asset:
+            card["tools"] = list(asset["tools"])
+        card.update({"configured": name in configured_roles,
+                     "candidates": sorted((dict(item) for item in candidates if item["priority"] > 0),
+                                          key=lambda item: item["priority"]),
+                     "disabled_candidates": [dict(item) for item in candidates if item["priority"] == 0]})
+        result.append(card)
+    return result
+
+
+def cards(config_dir, role=None):
+    if role is not None and role not in ROLE_NAMES:
+        raise SetupError("cards role must be one of: " + ", ".join(ROLE_NAMES) + ".")
+    assets = load_assets()
+    configuration = load_orchestration(config_dir)
+    return {"ok": True, "command": "cards", "config_path": str(config_dir / "orchestration.json"),
+            "configured": configuration is not None, "roles": role_cards(assets, configuration, role),
+            "notes": list(CARD_NOTES)}
 
 
 def load_rule():
@@ -216,10 +351,29 @@ def load_rule():
     return data
 
 
+def resolved_effort(asset, binding):
+    """Single resolution used by render_agent, prepare and verify-facing summaries.
+
+    Explicit plan effort wins; otherwise only a literal exact match with one of the asset's
+    recommended models carries that recommendation's effort. Unknown, custom or inherit
+    bindings keep the legacy default max; prefixes and suffixes are never stripped to guess.
+    """
+    explicit = binding.get("effort")
+    if explicit in EFFORT_LEVELS:
+        return explicit
+    model = binding.get("model")
+    if valid_model(model):
+        for item in asset.get("recommended_models", ()):
+            if item["model"] == model and item.get("effort") in EFFORT_LEVELS:
+                return item["effort"]
+    return "max"
+
+
 def render_agent(asset, binding):
     lines = ["---", "name: " + json.dumps(asset["name"], ensure_ascii=False),
              "description: " + json.dumps(asset["description"], ensure_ascii=False),
-             "model: " + json.dumps(binding["model"], ensure_ascii=False), "effort: max"]
+             "model: " + json.dumps(binding["model"], ensure_ascii=False),
+             "effort: " + resolved_effort(asset, binding)]
     if "tools" in asset:
         lines.append("tools: " + json.dumps(", ".join(asset["tools"])))
     body = asset["body"].rstrip() + "\n"
@@ -343,7 +497,36 @@ def query_models(environ):
         raise SetupError("Model-list GET failed; use --models-json, manual IDs or inherit.") from None
 
 
-def scan(config_dir, project_dir, models_json=None, query=False):
+def build_installation_advice(claude_subscription, claude_models_available):
+    if claude_subscription not in SUBSCRIPTION_STATES:
+        raise SetupError("claude_subscription must be one of: " + ", ".join(SUBSCRIPTION_STATES) + ".")
+    if claude_models_available not in CLAUDE_AVAILABILITY_STATES:
+        raise SetupError("claude_models_available must be one of: "
+                         + ", ".join(CLAUDE_AVAILABILITY_STATES) + ".")
+    if claude_subscription == "confirmed" and claude_models_available == "confirmed":
+        recommendation = "use-native-subagents"
+        reason = ("已有 Claude 订阅且所需 Claude 模型已确认可用，可直接使用 Claude Code 原生子代理，"
+                  "无需安装本项目的角色编排配置。")
+    elif claude_subscription == "confirmed":
+        state = "未全部确认可用" if claude_models_available == "incomplete" else "可用性尚未确认"
+        recommendation = "configure-roles"
+        reason = (f"已确认有 Claude 订阅，但所需 Claude 模型{state}；请先核实缺失项，"
+                  "或按候选模型为本项目配置角色。")
+    elif claude_subscription == "unavailable":
+        recommendation = "configure-roles"
+        reason = "已确认当前没有可用的 Claude 订阅；可按候选模型为本项目配置角色。"
+    else:
+        recommendation = "configure-roles"
+        reason = ("Claude 订阅状态未确认，不代表没有订阅；请核实订阅与所需 Claude 模型可用性，"
+                  "或直接按候选模型为本项目配置角色。")
+    return {"claude_subscription": claude_subscription,
+            "claude_models_available": claude_models_available,
+            "recommendation": recommendation, "reason": reason}
+
+
+def scan(config_dir, project_dir, models_json=None, query=False, *,
+         claude_subscription="unknown", claude_models_available="unknown"):
+    advice = build_installation_advice(claude_subscription, claude_models_available)
     candidates, gaps, context, provider_signals = {}, [], [], []
 
     def add(model, source, field, kind="configured"):
@@ -451,7 +634,8 @@ def scan(config_dir, project_dir, models_json=None, query=False):
     return {"ok": True, "command": "scan", "config_dir": str(config_dir),
             "project_dir": str(project_dir), "settings_sources": sources,
             "candidates": list(candidates.values()), "context_observations": context,
-            "provider_signals": provider_signals, "gaps": gaps, "notes": RUNTIME_NOTES}
+            "provider_signals": provider_signals, "gaps": gaps,
+            "installation_advice": advice, "notes": RUNTIME_NOTES}
 
 
 def safe_parents(path):
@@ -535,15 +719,38 @@ def merge_settings(original, context):
 def prepare(plan, config_dir):
     validate_plan(plan)
     assets = load_assets()
-    targets, agents = [], []
+    selected = plan.get("roles", {})
+    targets, agents, table = [], [], []
     for role in ROLE_NAMES:
-        if role not in plan.get("roles", {}):
+        asset, binding = assets[role], selected.get(role)
+        if binding is None:
+            table.append({"role": role, "name": asset["name"], "description": asset["description"],
+                          "recommended_models": asset["recommended_models"],
+                          "model": None, "effort": None, "status": "skipped", "notes": None})
             continue
-        asset, binding = assets[role], plan["roles"][role]
+        effort = resolved_effort(asset, binding)
+        table.append({"role": role, "name": asset["name"], "description": asset["description"],
+                      "recommended_models": asset["recommended_models"],
+                      "model": binding["model"], "effort": effort, "status": "selected",
+                      "notes": binding.get("notes")})
         path = config_dir / "agents" / (asset["name"] + ".md")
         targets.append(make_target(path, render_agent(asset, binding)))
         agents.append({"role": role, "name": asset["name"], "model": binding["model"],
-                       "effort": "max", "description": asset["description"], "path": str(path)})
+                       "effort": effort, "description": asset["description"],
+                       "recommended_models": asset["recommended_models"], "path": str(path)})
+    card_summary = None
+    if "orchestration" in plan:
+        configuration = plan["orchestration"]
+        path = config_dir / "orchestration.json"
+        content = (json.dumps(configuration, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+        target = make_target(path, content, new_mode=0o600)
+        if target.original is not None:
+            existing = validate_orchestration(parse_json(target.original, str(path)))
+            if existing == configuration:
+                target.content = target.original
+        targets.append(target)
+        card_summary = {"config_path": str(path), "configuration": copy.deepcopy(configuration),
+                        "roles": role_cards(assets, configuration)}
     context = {key: value for key, value in plan.get("context", {}).items() if value}
     if context:
         path = config_dir / "settings.json"
@@ -561,18 +768,28 @@ def prepare(plan, config_dir):
         targets.append(Target(path, original, content, 0o644 if mode is None else mode, fingerprint))
         rule = rule_bytes.decode("utf-8").rstrip("\n")
     notes = [
-        "All generated roles declare effort:max; runtime CLAUDE_CODE_EFFORT_LEVEL or managed limits may constrain it.",
+        "Generated roles render an explicit effort of xhigh or max, resolved as explicit plan effort, "
+        "then an exact recommended-model match, then max; runtime CLAUDE_CODE_EFFORT_LEVEL or managed "
+        "limits may constrain it.",
         "Model bindings preserve confirmed IDs exactly; access, capability and tool compatibility remain unverified.",
+        "recommended_models are selection starting points only; they are not a model availability list "
+        "and prove no access or capability.",
     ]
     if context:
         notes.append("Settings scope, managed policy, process environment and CLI flags can affect actual context behavior.")
     if context.get("env"):
         notes.append("These context env settings affect every role/session launched under them; the auto-compact env overrides per-model windows.")
+    if card_summary is not None:
+        notes.extend(CARD_NOTES)
+        notes.append("orchestration replaces one role-card configuration file; it does not generate or "
+                     "rewrite agents, model/effort bindings, settings or delegation rules.")
     summary = {"config_dir": str(config_dir), "agents": agents, "context_patch": context,
-               "delegation_rule": rule,
+               "delegation_rule": rule, "configuration_table": table,
                "targets": [{"path": str(target.path), "action": "unchanged" if not target.changed
                             else "create" if target.original is None else "replace"} for target in targets],
                "notes": notes}
+    if card_summary is not None:
+        summary["role_cards"] = card_summary
     return targets, summary
 
 
@@ -635,10 +852,12 @@ def apply_plan(plan, config_dir):
 
 def verify(config_dir):
     required = ["SKILL.md", "references/installation.md", "references/agents-and-installation.md",
-                "references/third-party-context.md", "assets/roles.json", "assets/delegation-rule.txt", "scripts/setup.py"]
+                "references/third-party-context.md", "references/role-cards.md", "assets/roles.json",
+                "assets/delegation-rule.txt", "scripts/setup.py"]
     for relative in required:
         read_bytes(SKILL_ROOT / relative)
     assets = load_assets()
+    configuration = load_orchestration(config_dir)
     load_rule()
     reference_dir = SKILL_ROOT / "references"
     if reference_dir.is_symlink():
@@ -670,18 +889,26 @@ def verify(config_dir):
             continue
         values = frontmatter_scalars(read_bytes(path))
         if (values.get("name") != assets[role]["name"] or not valid_model(values.get("model"))
-                or values.get("effort") != "max" or not values.get("description")):
-            raise SetupError(f"Invalid generated role frontmatter/model/effort:max: {path}")
-        agents.append({"name": values["name"], "model": values["model"], "effort": "max", "path": str(path)})
+                or values.get("effort") not in EFFORT_LEVELS or not values.get("description")):
+            raise SetupError(f"Invalid generated role frontmatter/model/effort (xhigh or max): {path}")
+        agents.append({"name": values["name"], "model": values["model"], "effort": values["effort"],
+                       "path": str(path)})
     return {"ok": True, "command": "verify", "skill_root": str(SKILL_ROOT),
             "required_resources": required, "checked_local_links": sorted(checked_links), "agents": agents,
+            "config_path": str(config_dir / "orchestration.json"), "configured": configuration is not None,
+            "role_cards": role_cards(assets, configuration),
             "notes": ["Skill-only and partial role installations are supported.",
-                      "Local file checks do not verify route access, model performance or context limits."]}
+                      "Local file checks do not verify route access, model performance or context limits.",
+                      *CARD_NOTES]}
 
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
+    reading = commands.add_parser("cards", help="Read current role cards and native agent candidates; no settings scan or network.")
+    reading.add_argument("--config-dir", type=absolute_path, default=default_config_dir(),
+                         help="CLAUDE_HOME, then CLAUDE_CONFIG_DIR, then HOME/.claude by default.")
+    reading.add_argument("--role", choices=ROLE_NAMES, help="Return only this role; otherwise return all five roles.")
     scanning = commands.add_parser("scan", help="Read local model candidates; no network by default.")
     scanning.add_argument("--config-dir", type=absolute_path, default=default_config_dir(),
                           help="CLAUDE_HOME, then CLAUDE_CONFIG_DIR, then HOME/.claude by default.")
@@ -691,12 +918,28 @@ def build_parser():
                           help="User-supplied string list or Anthropic-style {data:[{id:...}]} list.")
     scanning.add_argument("--query-models", action="store_true",
                           help="Explicit GET from process ANTHROPIC_BASE_URL only; no redirects, native/provider enumeration or generation.")
+    scanning.add_argument("--claude-subscription", choices=SUBSCRIPTION_STATES, default="unknown",
+                          help="User/wizard-confirmed Claude subscription state; never guessed from local files or credentials.")
+    scanning.add_argument("--claude-models-available", choices=CLAUDE_AVAILABILITY_STATES, default="unknown",
+                          help="User/wizard-confirmed availability of every required Claude model; candidate IDs are never proof.")
     explanation = ("All plan sections are optional; unknown fields are rejected. No context is written by default.\n"
+                   "Role cards: orchestration contains exactly version:1 and roles; each configured role contains\n"
+                   "only candidates:[{agent:<exact native type>,priority:<integer 0..10>}]. Namespaced agent types\n"
+                   "such as plugin:agent are preserved. Priority 0 disables, 1 is highest; ties keep input order.\n"
+                   "Supported roles: " + ", ".join(ROLE_NAMES) + "; no separate visual role.\n"
+                   "orchestration writes only <config>/orchestration.json; it needs no subscription, provider\n"
+                   "or context changes and does not rewrite native agents or add automatic fallback.\n"
+                   "Plan schema/example (role cards; these values are not defaults):\n" + PLAN_EXAMPLE + "\n\n"
+                   "Compatibility: top-level roles still binds one model per generated workflow-* agent;\n"
+                   "context and always_delegate retain their existing behavior.\n"
                    "Canonical modelSettings keys: " + ", ".join(sorted(CANONICAL_MODELS)) + ".\n"
                    "Per-model autoCompactWindow: integer 100000..1000000 or string auto.\n"
-                   "env: only the four keys shown; positive integer strings, AUTO 100000..1000000,\n"
+                   "roles.<role>.effort: optional " + " or ".join(EFFORT_LEVELS) + "; explicit plan effort wins, "
+                   "otherwise only an exact recommended-model match carries its effort, default max.\n"
+                   "env: only the four whitelisted keys; positive integer strings, AUTO 100000..1000000,\n"
                    "OUTPUT <=128000, DISABLE_1M only 1. Global env affects all roles/sessions.\n"
-                   "Exact confirmed model IDs are preserved; no :max or [1m] suffix is added.\n\nPlan schema/example (these values are not defaults):\n" + PLAN_EXAMPLE)
+                   "Exact confirmed model IDs are preserved; no :max or [1m] suffix is added.\n\n"
+                   "Compatibility plan example (these values are not defaults):\n" + COMPAT_PLAN_EXAMPLE)
     for name, help_text in (("preview", "Validate and show concrete targets without writing."),
                             ("apply", "Apply a previewed, user-authorized plan with unique backups.")):
         command = commands.add_parser(name, help=help_text, description=help_text,
@@ -704,7 +947,7 @@ def build_parser():
         command.add_argument("--plan", type=absolute_path, required=True, help="JSON plan; see schema below.")
         command.add_argument("--config-dir", type=absolute_path, default=default_config_dir(),
                              help="CLAUDE_HOME, then CLAUDE_CONFIG_DIR, then HOME/.claude by default.")
-    checking = commands.add_parser("verify", help="Check this installed skill and any chosen generated roles locally.")
+    checking = commands.add_parser("verify", help="Check skill resources, current role cards and any compatibility-generated roles locally.")
     checking.add_argument("--config-dir", type=absolute_path, default=default_config_dir(),
                           help="Role location: CLAUDE_HOME, then CLAUDE_CONFIG_DIR, then HOME/.claude.")
     return parser
@@ -713,8 +956,12 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
-        if args.command == "scan":
-            result = scan(args.config_dir, args.project_dir, args.models_json, args.query_models)
+        if args.command == "cards":
+            result = cards(args.config_dir, args.role)
+        elif args.command == "scan":
+            result = scan(args.config_dir, args.project_dir, args.models_json, args.query_models,
+                          claude_subscription=args.claude_subscription,
+                          claude_models_available=args.claude_models_available)
         elif args.command == "preview":
             _targets, summary = prepare(load_json(args.plan), args.config_dir)
             result = {"ok": True, "command": "preview", **summary}
