@@ -3,3 +3,5 @@
 *.bak
 .DS_Store
 /mods/*/.claude-plugin/types/
+__pycache__/
+*.py[cod]

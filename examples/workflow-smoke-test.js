@@ -2,7 +2,7 @@ export const meta = {
   name: 'agenttype-smoke-test',
   description: 'Verify external-model agentType routes in an explicitly supplied workspace',
   phases: [
-    { title: 'Execute', detail: 'GLM and Haiku agents complete separate small tasks' },
+    { title: 'Execute', detail: 'GLM and DeepSeek agents complete separate small tasks' },
     { title: 'Verify', detail: 'One independent verification of all results' },
   ],
 }
@@ -33,7 +33,7 @@ const RESULT = {
   required: ['status', 'model', 'file', 'output'],
 }
 // Preset-only example: the agentType names below come from this repo's --preset agents
-// (glm-5.3, glm-5.3-flash, haiku-5.5, optional gpt-6.1-sol); substitute your own role agents.
+// (glm-5.3, deepseek-v4.1-flash, optional gpt-6.1-sol); substitute your own role agents.
 const TASKS = [
   {
     type: 'glm-5.3', dir: `${baseDir}/glm`, file: 'pal.py', expected: 'True',
@@ -41,14 +41,9 @@ const TASKS = [
     command: 'python3 -c "import pal; print(pal.is_palindrome(\'A man, a plan, a canal: Panama\'))"',
   },
   {
-    type: 'glm-5.3-flash', dir: `${baseDir}/flash`, file: 'temp.py', expected: '98.6',
+    type: 'deepseek-v4.1-flash', dir: `${baseDir}/deepseek`, file: 'temp.py', expected: '98.6',
     task: 'Write celsius_to_f(c) in temp.py using c * 9 / 5 + 32.',
     command: 'python3 -c "import temp; print(temp.celsius_to_f(37))"',
-  },
-  {
-    type: 'haiku-5.5', dir: `${baseDir}/haiku`, file: 'marker.txt', expected: 'HAIKU_ROUTE_OK',
-    task: 'Write exactly HAIKU_ROUTE_OK followed by a newline to marker.txt.',
-    command: 'python3 -c "from pathlib import Path; print(Path(\'marker.txt\').read_text().strip())"',
   },
 ]
 
@@ -98,7 +93,7 @@ const VERIFY = {
 const verifyOptions = { label: 'verify:all', phase: 'Verify', schema: VERIFY }
 if (args.reviewWithSol === true) verifyOptions.agentType = 'gpt-6.1-sol'
 const verification = await agent(
-  'Independently verify all three tasks below. Do not trust execution claims: inspect each actual file and re-run ' +
+  'Independently verify all tasks below. Do not trust execution claims: inspect each actual file and re-run ' +
   'each listed command in its working directory. Return exact observed stdout for every task using the result schema; ' +
   'use status failed and error for any missing file, failed command, or mismatch. Do not edit files. ' +
   'Direct review only; do not invoke /code-review or other skills.\n' +

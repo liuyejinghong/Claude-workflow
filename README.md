@@ -1,143 +1,153 @@
 # Claude-workflow
 
-Claude Code 自带成熟的原生子代理、并行执行与后台通知。本项目在这套 harness 上接入多模型委托：主控保留规划、根因判断、架构决策与最终验收，把方案明确的实现、测试、检索、专项与独立审查交给合适的子代理；分工按你环境中实际可用的模型确定，不要求特定型号，也不要求 Magpie。
+> 推荐用 [Magpie](https://github.com/yetone/magpie) 作为本地网关，统一管理各模型的接入。
 
-仓库包含两个可独立安装的组件：
+Claude-workflow 是一套在 Claude Code 里使用多个模型协作开发的方式：你照常在同一个对话里提需求，当前会话理解目标、决定做法，把写代码、查资料、独立复核交给合适的模型，最后把改动和结果交给你。
 
-| 组件 | 当前版本 | 入口 |
-|---|---|---|
-| multi-model-orchestration（skill） | 0.5.4 | [安装与配置](#安装与验证)：安装编排 skill，再把环境里的模型绑定到角色 |
-| token-speed（mod） | 0.4.4 | [会话与代理状态监控](mods/token-speed/README.md)：独立的实时代理面板 |
+它省去你手动切换模型、逐个重复交代背景的麻烦：实现和复核分开进行，你看得到改了哪些文件、测试实际跑出什么结果、还有哪些问题留着。用哪些模型由你的环境决定，不需要固定型号。
 
-当前版本：[v0.5.4](VERSION) · [更新记录](CHANGELOG.md) · [MIT License](LICENSE)；token-speed 使用独立版本，其历史见 [mod 更新记录](mods/token-speed/CHANGELOG.md)。
+## 用起来是什么样
 
-<a id="安装与验证"></a>
+假设你有一个正在开发的项目，想加一个“导出配置”的功能。你在 Claude Code 里说清目标和验收，不需要指定谁来做：
+
+```text
+/multi-model-orchestration 给设置页加一个“导出配置”按钮，把当前设置导出成 JSON；补上对应测试，原有测试也要通过。
+```
+
+配置好分工后，大致会经历：
+
+```text
+澄清必要的问题
+  → 适合该任务的模型改代码、补测试并实际运行
+  → 另一个独立上下文复核改动、测试结果和边界
+  → 当前会话汇总：改了哪些文件、测试输出、还没解决的问题
+```
+
+需要先了解外部资料时，也可以先让负责调研的模型带着来源查清，再进入实现。
+
+## 几个使用案例
+
+下面几个例子都从“你想做什么”出发，重点是你可以在 Claude Code 里怎么说。例子里的模型名和代理名请按自己的环境替换。
+
+### 案例 A：开始一次协作开发
+
+比如你想给已有项目的搜索框加上“最近搜索”。在 Claude Code 里发：
+
+```text
+/multi-model-orchestration 给现有项目加“最近搜索”：搜索框获得焦点时显示最近 5 条，选中后填入并触发搜索。
+范围只改搜索相关组件和它的测试。验收是功能可用，原有搜索测试仍然通过。
+实现完成后让另一个代理独立复核，再告诉我改了什么、测试结果和遗留项。
+```
+
+“最近搜索”只是例子，换成你自己的功能、文件和验收标准即可。必要时当前会话会先确认少量会影响做法的问题，再交给适合且可用的模型实现；完成后由另一个独立上下文复核改动、测试结果和边界，最后由当前会话把改动、实际测试结果和遗留问题交回给你。
+
+### 案例 B：增加一个模型
+
+假设你已经在 Magpie 或自己的接入方式里接好了一个新模型，想让它参与日常实现。在 Claude Code 里可以这样说：
+
+```text
+/multi-model-orchestration 我已经接好了「新模型的准确名称」。
+请为它建一个原生子代理，负责「想承担的工作」，再把它加入日常实现的候选。
+如果已经有对应的原生代理，直接把那个名字加进名单。
+```
+
+把引号里的内容换成实际名称和它实际擅长的工作。已经接通的模型，建一个原生子代理或复用一个现成的，确认当前会话能调用后，加入日常实现的候选；已有代理只需改名单。模型接入和凭据仍由你的环境负责，Magpie 可以帮你统一管理这一步。
+
+### 案例 C：调整日常实现先找谁
+
+用了一阵子后，你可能想换一下优先顺序。比如：
+
+```text
+/multi-model-orchestration 日常实现优先 MiniMax-M3.1-Flash，其次 deepseek-v4.1-flash；
+难题保留原来的安排，复核保持独立。
+```
+
+改完后，下次委托会按新顺序选第一个适合且当前可用的候选。它只影响“先找谁”，不改变模型本身，也不是执行失败后自动换模型重试的机制。
+
+### 案例 D：把资料调研也加入分工
+
+一开始你可能只安排了“谁写、谁复核”。后来有些任务需要先查清外部资料，可以这样说：
+
+```text
+/multi-model-orchestration 把资料调研也加入分工。用现在已经能调用的「某个代理」负责带来源的资料调查，
+只做调研、不改代码，查完把结论和出处一起交回来。
+```
+
+之后遇到需要查资料的任务，当前会话会先把调研交给这个代理，再把带来源的结论交给实现或复核；前提是它已经接入、当前会话确实能调用。目前提供五类分工：常规实现、困难实现、独立复核、资料调研、文字与审美，每类交给谁、先后顺序都能按需配置，岗位类型本身固定。这里是给现有的调研岗位指定人选，更细的说明见[角色卡参考](skills/multi-model-orchestration/references/role-cards.md)。
 
 ## 快速开始
 
-前置条件：Claude Code 可用；安装脚本需要 Bash，安装向导与验证需要 Python 3（只用标准库）。流程共四步：终端安装文件 → Claude Code 里运行向导 → 跟着向导确认方案 → 重载并本地验证。
-
-1. **安装 skill 文件**
-
-   ```bash
-   git clone https://github.com/liuyejinghong/Claude-workflow.git
-   cd Claude-workflow
-   ./install.sh
-   ```
-
-   默认只把完整 skill 目录（含 `references/` 与角色资产 `assets/roles.json`）复制到 `~/.claude/skills/multi-model-orchestration/`：不安装具名 agent、不改 settings、不写 `CLAUDE.md`。配置目录按 `CLAUDE_HOME` > `CLAUDE_CONFIG_DIR` > `~/.claude` 取值；覆盖已有文件前会创建唯一备份，且不覆盖更早的备份。
-
-2. **打开或重载 Claude Code，运行向导**：新开一个会话，或在当前会话退出后运行 `claude --continue` 重载；然后在会话中输入 `/multi-model-orchestration install`。
-
-3. **跟着向导确认方案**：向导会依次扫描已配置的候选模型 → 按角色描述与证据匹配角色 → 检查各模型的上下文 → 给出不落盘的修改预览。不要求先配置 Magpie 或先能列出模型：没有模型列表时，用已有候选、你手工确认的精确模型 ID，或 `inherit` 沿用当前主模型。
-
-   上下文检查必做，但写入 context 参数是可选项（默认不写）；追加常驻单句同样可选。确认预览后才写入，且只写选定的字段，写入前先备份。
-
-4. **重载角色并本地验证**：按提示重载会话，确认角色出现在可用工具目录后运行
-
-   ```bash
-   ./scripts/verify.sh
-   ```
-
-   默认只核对已安装文件与所选角色定义，不发模型请求。
-
-<details>
-<summary>verify.sh 的可选模式与口径</summary>
-
-- `--models`：可选扫描已配置的模型/列表。
-- `SMOKE_MODEL=<已确认的精确 ID> ./scripts/verify.sh --smoke`：额外发起一次最小模型调用，做 Messages 工具往返。
-
-这些检查只说明本地文件与一次调用的情况，不是线路性能或能力评估；完整说明见 [代理可用性与安装排查](skills/multi-model-orchestration/references/agents-and-installation.md)。
-
-</details>
-
-## 安装后怎么用
-
-需要委托时，直接以 `/multi-model-orchestration <任务>` 开头按需调用；例如：
-
-```text
-/multi-model-orchestration 修复 src/config.ts 读取空配置时抛错的问题。已定方案：空文件返回默认配置，并补一个对应测试。
-范围：只改 src/config.ts 与 tests/config.test.ts；不升级依赖。
-实现：由合适的代理按该方案完成并实际运行测试；复核：由独立上下文核对改动、测试结果与边界条件。
-验收标准：新增测试实际通过，覆盖空配置文件与 EOF 边界。
-```
-
-- 只装 skill、只绑定部分角色也能用：按实际工具目录里可用的代理与任务风险选择；普通任务可以由同一模型的新上下文承担，高风险或强审查缺能力匹配代理时报告缺口、不由弱代理顶替，没有 Agent 工具时不强行派发；完整分支规则见 [代理可用性与安装排查](skills/multi-model-orchestration/references/agents-and-installation.md)。
-- 同一模型可以在多个相互独立的新上下文里承担不同角色，实现与复核必须分开；普通子代理在独立的新上下文运行、不继承主会话的对话（fork 等继承模式除外），任务合同、路径与验收标准仍要写清楚，保持自包含 prompt。
-- 并行委托默认共享当前目录：写入任务按文件分工，同一文件同一时间只有一个写入者；范围重叠就串行交接，或在已授权时用 worktree 隔离，规则细节见 [「并发写入与交接」](skills/multi-model-orchestration/SKILL.md#并发写入与交接)。
-- 向导生成的 agent 定义使用 `effort: max` 并保留你确认的精确模型 ID 与原有后缀；不会自动添加 provider 前缀、`:max` 或 `[1m]`。
-- 默认按需使用，不需要修改 `CLAUDE.md`。希望每个会话都自动带上委托约定时，把 [templates/CLAUDE.md.snippet](templates/CLAUDE.md.snippet) 中的这一句合并进全局 `~/.claude/CLAUDE.md`（保留其他已有内容）：
-
-> 处理需要委托、独立审查或多代理协作的任务时，先调用 `multi-model-orchestration` skill，按其规则执行。
-
-## 六个角色与匹配规则
-
-通用安装把候选模型绑定到六个模型中立角色（定义全文随 skill 安装，见 [assets/roles.json](skills/multi-model-orchestration/assets/roles.json)）；主控始终保留决策与最终验收。
-
-| 角色 | 生成名 | 职责 |
-|---|---|---|
-| worker | `workflow-worker` | 按已定方案完成常规编码、修复、测试、重构与取证，回报证据 |
-| engineer | `workflow-engineer` | 困难跨模块或高风险实现；仅在有能力证据时指派 |
-| reviewer | `workflow-reviewer` | 独立复核整体正确性与合同边界；只审不改（除非授权） |
-| visual | `workflow-visual` | 原生图像/截图证据分析；需要确认的原生视觉证据 |
-| researcher | `workflow-researcher` | 研究、证明、仿真或限定范围的独立第二意见 |
-| editor | `workflow-editor` | 指定纯文字润色与 UI 审美反馈（仅 Read/Glob/Grep/Edit/Write） |
-
-匹配规则：
-
-- 按角色描述与证据匹配：候选名称或配置不等于工具兼容或能力，未知模型不按名字猜能力。
-- engineer、reviewer、visual 需要能力、视觉或强审查证据；没有证据就跳过该角色，不硬绑。
-- 已有合适的 agent 直接复用，不必为每个角色新建模板。
-- 上下文相互独立的角色可以由同一模型承担（各自单独的新上下文调用），不按 effort 拆出重复代理。
-
-## 可选：个人预设（7 个示例 agent）
-
-`./install.sh --preset` 在默认 skill 之外，追加安装本仓库参考环境的 7 个示例 agent（6 个核心 + 可选 Gemini，Sol 默认 xhigh，其余默认 max），并迁移旧档 `haiku-5.5-max`。这是一套可行的经验分工示例，不是通用安装要求；路由与凭据仍需按你的环境配置（参考链路为 Claude Code → Magpie → 各上游，通用安装不需要 Magpie）。
-
-示例中 `glm-5.3` 是 Claude Code CLI 常规编码主力，`deepseek-v4.1-flash` 负责调研取证、定位与工具自动化，`gpt-6.1-sol` 负责困难、高风险实现与关键整体审查；完整分工与选型依据见 [模型分工与选型依据](docs/haiku-vs-glm-flash.md)，示例路由 ID 与验证记录见 [Magpie 路由示例](examples/magpie-routing.md)，各 agent 的任务边界以 [agents/](agents) 中的定义为准。
-
-<a id="4-gemini-专项输出上限说明"></a>
-
-<details>
-<summary>使用示例中的 Gemini 3.8 Flash 时注意单次输出上限</summary>
-
-示例路由 `commandcode/google/gemini-3.8-flash` 的上游单次输出上限最高 65536 tokens；若当前环境的 `CLAUDE_CODE_MAX_OUTPUT_TOKENS` 高于该值，请求会返回 400。可在使用该模型的会话里临时覆盖（该覆盖对整个会话中的所有模型生效，只影响单次输出上限，不影响上下文窗口与 effort）：
+需要 Claude Code、Bash 和 Python 3。安装文件在终端运行：
 
 ```bash
-claude --settings '{"env":{"CLAUDE_CODE_MAX_OUTPUT_TOKENS":"65536"}}'
-# 继续已有对话时追加 --continue
+git clone https://github.com/liuyejinghong/Claude-workflow.git
+cd Claude-workflow
+./install.sh
 ```
 
-这是该示例路由上已核实的限制，不代表其他 provider 或路由的通用上限。
-
-</details>
-
-## token-speed 0.4.4：会话与代理状态监控
-
-[token-speed](mods/token-speed/README.md) 是独立的 Claude Code function-hooks mod（本版本在 CLI 2.1.296 上验证），不依赖 Magpie 或模型订阅；两个组件可独立安装，根目录 `./install.sh` 不安装 mod。它在输入框上方为每个活跃代理显示一行：
+默认只装编排 skill。装完新开一个会话（或运行 `claude --continue`），然后在 Claude Code 里运行：
 
 ```text
-⚡ main · gpt-6.1-sol · max · Ctx ██████▊    67%/500k · Live ~42.1 · Last 31.2 · Avg 28.6 tok/s · streaming
-🌳 abcdefg1 · glm-5.3-flash · max · Ctx █▍         14%/1.0M · Live ~35.2 · Last 29.1 · Avg 30.4 tok/s · streaming
-⌂ Claude-workflow on main
+/multi-model-orchestration install
 ```
 
-Live 是带 `~` 的字符估算值；Last 与 Avg 是 CLI usage 的 API 全程输出速率（含网络、TTFT 与 thinking），不是纯解码速度或 benchmark。通过 Marketplace 安装：
+五类分工（常规实现、困难实现、独立复核、资料调研、文字与审美）已经内置在编排里，不用自己搭建。这一步只是给每类分工定人选：向导会盘点你当前已经接好的模型，为每类分工推荐由谁来做、按什么顺序，先给出预览，确认后才写入。模型要先在你的环境里接通、当前会话能调用；接入这一步可以用 Magpie。更完整的安装与配置说明见[安装参考](skills/multi-model-orchestration/references/installation.md)。
 
-```text
-/plugin marketplace add liuyejinghong/Claude-workflow
-/plugin install token-speed@claude-workflow-mods
-```
+不知道选什么的话，可以参考下面这套按公开信息整理的建议（模型名与价格取自 models.dev 及各厂商官方页，2026-10-20 取样）：
 
-常用命令：`/tok-speed`（详细列表与口径）、`/tok-speed reset`（重置本会话统计）。其余指标口径与兼容性细节见 [token-speed 说明](mods/token-speed/README.md)。
+**常规实现**（日常改代码、补测试、重构：量大、单次失败代价低，先比价格和速度）
 
-## 深入文档
+1. `MiniMax-M3.1-Flash` — 每百万 token $0.15/$0.60、1M 上下文，日常实现性价比最高
+2. `deepseek-v4.1-flash` — 同价位，支持视觉输入，并发上限高
+3. `glm-5.3` — 贵一档但实现质量稳，适合质量敏感的日常改动
+4. `gemini-3.8-flash` — 1M 上下文、多模态，需要看截图或界面时用
+5. `qwen3.8-flash` — 成本最低的兜底
 
-- [安装参考](skills/multi-model-orchestration/references/installation.md)：scan → 角色匹配 → 上下文检查 → preview/apply → verify 的完整顺序、命令与 plan schema。
-- [代理可用性与安装排查](skills/multi-model-orchestration/references/agents-and-installation.md)：默认 / 预设 / 部分角色安装，以及缺代理时的四种可用性分支。
-- [第三方窗口与压缩排查](skills/multi-model-orchestration/references/third-party-context.md)：第三方模型的窗口、压缩与输出上限参数。
-- [多模型编排手册](skills/multi-model-orchestration/SKILL.md)：选型规则、调用协议、审查与返工、Workflow 编排。
-- [模型分工与选型依据](docs/haiku-vs-glm-flash.md) 与 [Magpie 路由示例](examples/magpie-routing.md)：个人预设的分工、路由与验证记录。
-- [常驻规则模板](templates/CLAUDE.md.snippet)：上面引用的那一句。
-- [Workflow 冒烟示例](examples/workflow-smoke-test.js)：依赖 Workflow 运行时注入的 API，需要在运行时显式选择并授权执行，不能作为普通 Node.js 脚本运行。
-- [Mods 索引](mods/README.md) 与 [token-speed 说明](mods/token-speed/README.md)：mod 的安装方式、指标口径与 CLI 兼容版本。
+**困难实现**（跨模块、难啃或高风险改动：失败代价高，先能力再上下文再价格）
+
+1. `gpt-6.1-sol` — 官方定位就是复杂编码与 agent 流程，能力接近旗舰、价格低一半
+2. `claude-opus-5-5` — 官方定位长时间 agent 编码，1M 上下文
+3. `kimi-k3` — 1M 上下文，长仓库长文档场景性价比突出
+4. `gpt-6-astra` — 官方最强档，留给前面仍不够时
+5. `claude-fable-5-1` — 最难推理与长时 agent，与 Astra 同价位、更偏长链推理
+
+**独立复核**（换独立上下文只审不改：能力优先，尽量与实现方不同厂商）
+
+1. `gpt-6.1-sol` — 强度与成本平衡最好，默认复核档
+2. `gpt-6-astra` — 最强复核，用于高风险改动
+3. `claude-opus-5-5` — 与 OpenAI 系不同家族，复核视角更独立
+4. `glm-5.3` — 第三厂商，成本敏感时的复核档
+5. `kimi-k2.7-code` — 编码专用型号，适合审代码
+
+**资料调研**（带来源的检索与调查：要快、便宜、上下文大）
+
+1. `MiniMax-M3.1-Flash` — 便宜且 1M 上下文，抓取整理长资料性价比最高
+2. `deepseek-v4.1-flash` — 同价位，支持视觉与工具调用
+3. `gemini-3.8-flash` — 联网与多模态检索强
+4. `glm-5.3-flash` — 多模态输入的低价档
+5. `qwen3.7-flash` — 每百万 token $0.03/$0.13，量大时用
+
+**文字与审美**（文案润色、界面审美反馈：要能看图，再比速度和价格）
+
+1. `gemini-3.8-flash` — 当前主力 Flash，多模态输入、速度快
+2. `glm-5.3-flash` — 原生视觉输入，价格低
+3. `MiniMax-M3.1-Flash` — 支持 image/video 输入
+4. `qwen3.8-flash` — 多模态输入，价格低
+5. `gpt-6-luna` — 高吞吐纯文本润色
+
+这只是按公开价格和能力标签整理的起点，换成你手里能力相当的模型完全可以；完整调研记录见 [模型调研](docs/research/popular-models-2026-10-20.md)，维护者本地实际搭配见 [Magpie 示例](examples/magpie/README.md)。
+
+## 查看运行状态
+
+如果想看某次任务里有哪些模型在工作、各自占用了多少上下文、输出速度怎么样，可以加装独立的 [token-speed](mods/token-speed/README.md) 组件。它在输入框上方按代理显示模型、上下文占用和生成速率，装不装都不影响上面的使用。
+
+## 更多用法
+
+- 想调整每类分工用哪些模型、谁先谁后：[角色卡参考](skills/multi-model-orchestration/references/role-cards.md)
+- 模型接不上，或安装后当前会话看不到新代理：[代理与安装排查](skills/multi-model-orchestration/references/agents-and-installation.md)
+- 第三方模型的上下文窗口、压缩和输出上限：[第三方上下文](skills/multi-model-orchestration/references/third-party-context.md)
+- 想看看维护者自己怎么分工（个人环境示例，不是通用接入方式）：[Magpie 示例](examples/magpie/README.md)
+- 委托任务怎么写、并行和复核怎么安排：[编排手册](skills/multi-model-orchestration/SKILL.md)
+- 想让每个会话都带上委托约定：[常驻规则模板](templates/CLAUDE.md.snippet)
+
+版本：Claude-workflow 0.6.0，token-speed 0.4.5，两者独立发版。更新见 [CHANGELOG](CHANGELOG.md) 与 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)，许可证 [MIT](LICENSE)。

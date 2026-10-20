@@ -1,6 +1,6 @@
 # 代理可用性与安装排查
 
-skill `multi-model-orchestration` 的按需参考：派发时找不到推荐代理，或安装/加载状态不清时读这里。可用性的权威规则在 skill 首段，本页不重复；把已配置的模型绑定到角色（`/multi-model-orchestration install`）见 [installation.md](installation.md)。
+skill `multi-model-orchestration` 的按需参考：派发时找不到推荐代理，或安装/加载状态不清时读这里。可用性的权威规则在 skill 首段，本页不重复；把已配置的模型绑定到角色（`/multi-model-orchestration install`）见 [installation.md](installation.md)；岗位候选与优先级见 [role-cards.md](role-cards.md)。
 
 ## 四种可用性分支
 
@@ -17,9 +17,10 @@ skill `multi-model-orchestration` 的按需参考：派发时找不到推荐代�
 
 | 方式 | 内容 | 之后要做 |
 |---|---|---|
-| 默认（推荐） | `./install.sh` 只复制完整便携 skill 目录（含 `references/`、`assets/`、`scripts/`）到 `~/.claude/skills/`，不安装具名 agent、不改 settings、不写 `CLAUDE.md`。 | 用 `/multi-model-orchestration install` 把环境已有候选绑定到角色（见 [installation.md](installation.md)）；不要求 Magpie。 |
+| 默认（推荐） | `./install.sh` 只复制完整便携 skill 目录（含 `references/`、`assets/`、`scripts/`）到 `~/.claude/skills/`，不安装具名 agent、不改 settings、不写 `CLAUDE.md`。 | 先过安装向导的适用性检查（已有 Claude 订阅且所需 Claude 模型确认可用时直接用原生子代理），再用 `/multi-model-orchestration install` 把环境已有候选绑定到角色（见 [installation.md](installation.md)）；不要求 Magpie。 |
 | 手工仅 skill | 把 `skills/multi-model-orchestration/` 整个目录复制到 skills 目录，与默认安装等效。 | 同上；skill 本地资源随目录走。 |
-| 个人预设 | `./install.sh --preset` 在默认之外追加安装 7 个示例 agent（6 核心 + 可选 Gemini）与既有 `haiku-5.5-max` 迁移。 | 路由/凭据仍需自行配置；本仓库参考环境为 Magpie，见 [Magpie 路由示例](https://github.com/liuyejinghong/Claude-workflow/blob/main/examples/magpie-routing.md)。 |
+| 角色卡（轻量） | 不装任何 agent，只写一份 `<config>/orchestration.json`，引用你已有的原生 agent 与 priority。 | 每次读表用 `setup.py cards`；改 priority 即时生效，不需要重载；见 [role-cards.md](role-cards.md)。 |
+| 个人预设 | `./install.sh --preset` 在默认之外追加安装 8 个示例 agent（仓库 `examples/magpie/agents/`，含 MiniMax-free、DeepSeek-free 与可选 Gemini）与既有 `haiku-5.5-max` 迁移。 | 路由/凭据仍需自行配置；本仓库参考环境为 Magpie，见 [Magpie 路由示例](https://github.com/liuyejinghong/Claude-workflow/blob/main/examples/magpie/routing.md)。 |
 | 部分 agent | 只复制已接入的模型定义（预设的或自备的）。 | 缺的模型按「四种可用性分支」处理；也可在 install 分支按描述绑定现有 agent，不做任意能力替换。 |
 
 安装步骤（默认）：
@@ -30,7 +31,7 @@ cd Claude-workflow
 ./install.sh
 ```
 
-`install.sh` 对已有同名文件做唯一非覆盖备份（保留现有文件与更早备份），不改 CLI 配置、provider 或全局 `CLAUDE.md`；目标目录可用 `CLAUDE_HOME` 自定义，settings 根可由 `CLAUDE_CONFIG_DIR` 指定（`CLAUDE_HOME` override 优先）。安装或同步后需重启（新开会话或 `claude --continue`），再查看实际工具目录确认角色可见；新装的 agents 目录不承诺固定生效时间。常驻规则模板 `templates/CLAUDE.md.snippet` 只有一句 skill 引用，按需合并进全局 `~/.claude/CLAUDE.md`。
+`install.sh` 覆盖前将旧 skill 整目录备份到 `<config>/.workflow-backups/install-<唯一名>/multi-model-orchestration/`（备份根目录与本次目录权限均为 0700），避免备份中的 `SKILL.md` 被当作活跃 skill；不覆盖更早备份，也不迁移或删除既有旧版 `.bak`。preset 单个 agent 的备份仍在原文件旁，以 `.bak.<时间戳>.<PID>` 唯一命名。脚本不改 CLI 配置、provider 或全局 `CLAUDE.md`；目标目录可用 `CLAUDE_HOME` 自定义，settings 根可由 `CLAUDE_CONFIG_DIR` 指定（`CLAUDE_HOME` override 优先）。安装或同步后需重启（新开会话或 `claude --continue`），再查看实际工具目录确认角色可见；新装的 agents 目录不承诺固定生效时间。常驻规则模板 `templates/CLAUDE.md.snippet` 只有一句 skill 引用，按需合并进全局 `~/.claude/CLAUDE.md`。
 
 ## 验证与修改边界
 

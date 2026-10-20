@@ -2,7 +2,7 @@
 """根入口合同测试：install.sh 与 scripts/verify.sh。
 
 覆盖合同 Agreed architecture 第 1 条与 Root verify.sh：
-- 默认只安装完整 skill（不写 agents/settings/CLAUDE.md），--preset 才装 7 个示例 agent
+- 默认只安装完整 skill（不写 agents/settings/CLAUDE.md），--preset 才装 8 个示例 agent
   并迁移 haiku-5.5-max.md；唯一备份绝不覆盖既有 .bak；参数错误零副作用；符号链接目标拒绝。
 - verify.sh 默认委托已安装 skill 的 scripts/setup.py verify --config-dir；--models 走
   scan --query-models；--smoke 必须显式 SMOKE_MODEL，恰好两轮工具往返、不先 GET 模型列表、
@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -28,7 +29,7 @@ REPO = Path(__file__).resolve().parents[2]
 INSTALL = REPO / "install.sh"
 VERIFY = REPO / "scripts" / "verify.sh"
 SOURCE_SKILL = REPO / "skills" / "multi-model-orchestration"
-SOURCE_AGENTS = REPO / "agents"
+SOURCE_AGENTS = REPO / "examples" / "magpie" / "agents"
 
 _TEMP_DIRS = []
 
@@ -295,6 +296,65 @@ class InstallEntrypoints(unittest.TestCase):
         self.assertNotIn("Magpie", proc.stdout)
         backups = [p.name for p in (claude / "skills").iterdir() if ".bak" in p.name]
         self.assertEqual(backups, [])
+        self.assertFalse((claude / ".workflow-backups").exists())
+
+    def test_installed_real_helper_cards_apply_and_verify_are_self_contained(self):
+        sandbox = make_sandbox("real-cards")
+        claude = sandbox / "claude"
+        home = sandbox / "home"
+        home.mkdir()
+        env = {"CLAUDE_HOME": str(claude), "HOME": str(home), "PYTHONDONTWRITEBYTECODE": "1"}
+        proc = run_install([], env)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        installed = claude / "skills" / "multi-model-orchestration"
+        helper = installed / "scripts" / "setup.py"
+        self.assertTrue((installed / "references" / "role-cards.md").is_file())
+        skill_before = tree_snapshot(installed)
+
+        def helper_command(*arguments):
+            return subprocess.run([sys.executable, "-I", "-B", str(helper), *map(str, arguments)],
+                                  cwd=str(sandbox), env=_env(env), capture_output=True, text=True, timeout=30)
+
+        before = tree_snapshot(claude)
+        proc = helper_command("cards")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        output = json.loads(proc.stdout)
+        self.assertFalse(output["configured"])
+        self.assertEqual([card["role"] for card in output["roles"]],
+                         ["worker", "engineer", "reviewer", "researcher", "editor"])
+        self.assertEqual(tree_snapshot(claude), before)
+        self.assertFalse((claude / "orchestration.json").exists())
+
+        configuration = {"version": 1, "roles": {
+            "worker": {"candidates": [{"agent": "plugin:existing-worker", "priority": 1}]},
+        }}
+        plan = sandbox / "cards-plan.json"
+        plan.write_text(json.dumps({"orchestration": configuration}), encoding="utf-8")
+        proc = helper_command("apply", "--plan", plan)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["written"], [str(claude / "orchestration.json")])
+        self.assertEqual(tree_snapshot(installed), skill_before)
+        self.assertEqual({path.name for path in claude.iterdir()}, {"skills", "orchestration.json"})
+        proc = helper_command("cards", "--role", "worker")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["roles"][0]["candidates"],
+                         configuration["roles"]["worker"]["candidates"])
+        proc = helper_command("verify")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        output = json.loads(proc.stdout)
+        self.assertTrue(output["configured"])
+        self.assertEqual(output["agents"], [])
+        self.assertEqual(len(output["role_cards"]), 5)
+        self.assertIn("references/role-cards.md", output["required_resources"])
+        before = tree_snapshot(claude)
+        proc = run_verify([], env)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(tree_snapshot(claude), before)
+        (claude / "orchestration.json").write_text('{"version":true,"roles":{}}', encoding="utf-8")
+        proc = run_verify([], env)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("integer 1", proc.stderr)
+        self.assertEqual(tree_snapshot(installed), skill_before)
 
     def test_config_dir_resolution_order(self):
         sandbox = make_sandbox("resolve")
@@ -332,40 +392,98 @@ class InstallEntrypoints(unittest.TestCase):
         home.mkdir()
         skills = claude / "skills"
         target = skills / "multi-model-orchestration"
-        target.mkdir(parents=True)
+        (target / "references").mkdir(parents=True)
+        (target / "SKILL.md").write_text("original skill\n", encoding="utf-8")
+        (target / "references" / "old.md").write_text("old reference\n", encoding="utf-8")
         (target / "user-note.txt").write_text("first user note\n", encoding="utf-8")
+        original = tree_snapshot(target)
         historic = skills / "multi-model-orchestration.bak"
         historic.write_text("historic bak sentinel\n", encoding="utf-8")
-
+        historic_dir = skills / "multi-model-orchestration.bak.older"
+        historic_dir.mkdir()
+        (historic_dir / "keep.txt").write_text("historic directory sentinel\n", encoding="utf-8")
+        historic_before = tree_snapshot(historic_dir)
+        backup_root = claude / ".workflow-backups"
         env = {"CLAUDE_HOME": str(claude), "HOME": str(home)}
-
-        def backup_dirs():
-            return sorted(
-                p
-                for p in skills.iterdir()
-                if p.is_dir() and p.name.startswith("multi-model-orchestration.bak")
-            )
 
         proc = run_install([], env)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual(len(backup_dirs()), 1)
-        self.assertEqual((backup_dirs()[0] / "user-note.txt").read_text(encoding="utf-8"), "first user note\n")
-        self.assertEqual(historic.read_text(encoding="utf-8"), "historic bak sentinel\n")
+        first_backups = set(backup_root.glob("install-*/multi-model-orchestration"))
+        self.assertEqual(len(first_backups), 1)
+        first = next(iter(first_backups))
+        self.assertEqual(tree_snapshot(first), original)
         self.assertEqual(tree_snapshot(SOURCE_SKILL), tree_snapshot(target))
 
         (target / "installed-marker.txt").write_text("after first install\n", encoding="utf-8")
+        installed = tree_snapshot(target)
         proc = run_install([], env)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual(len(backup_dirs()), 2)
-        captured = [
-            (b / "installed-marker.txt").read_text(encoding="utf-8")
-            if (b / "installed-marker.txt").exists()
-            else None
-            for b in backup_dirs()
-        ]
-        self.assertIn(None, captured)
-        self.assertIn("after first install\n", captured)
+        backups = set(backup_root.glob("install-*/multi-model-orchestration"))
+        self.assertEqual(len(backups), 2)
+        self.assertTrue(first_backups < backups, "重复安装必须创建唯一备份，不能覆盖旧目录")
+        self.assertEqual(tree_snapshot(first), original)
+        second = next(iter(backups - first_backups))
+        self.assertEqual(tree_snapshot(second), installed)
+        self.assertEqual(backup_root.stat().st_mode & 0o777, 0o700)
+        for backup in backups:
+            self.assertEqual(backup.parent.stat().st_mode & 0o777, 0o700)
         self.assertEqual(historic.read_text(encoding="utf-8"), "historic bak sentinel\n")
+        self.assertEqual(tree_snapshot(historic_dir), historic_before)
+        self.assertEqual(sorted(skills.rglob("SKILL.md")), [target / "SKILL.md"])
+        self.assertEqual({p.name for p in skills.iterdir()}, {target.name, historic.name, historic_dir.name})
+        self.assertEqual(tree_snapshot(SOURCE_SKILL), tree_snapshot(target))
+
+    def test_backup_root_preflight_rejects_symlink_or_file_without_writes(self):
+        for kind in ("symlink", "file"):
+            with self.subTest(kind=kind):
+                sandbox = make_sandbox("backup-preflight")
+                claude = sandbox / "claude"
+                claude.mkdir()
+                home = sandbox / "home"
+                home.mkdir()
+                backup_root = claude / ".workflow-backups"
+                if kind == "symlink":
+                    outside = sandbox / "outside"
+                    outside.mkdir()
+                    (outside / "keep.txt").write_text("outside sentinel\n", encoding="utf-8")
+                    backup_root.symlink_to(outside)
+                else:
+                    backup_root.write_text("backup root sentinel\n", encoding="utf-8")
+                before = tree_snapshot(sandbox)
+                proc = run_install(["--preset"], {"CLAUDE_HOME": str(claude), "HOME": str(home)})
+                self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+                self.assertIn("skill 备份根目录", proc.stderr)
+                self.assertEqual(tree_snapshot(sandbox), before, "预检失败不得创建 skills、agents 或备份")
+
+    def test_skill_swap_failure_restores_original_directory(self):
+        sandbox = make_sandbox("swap-failure")
+        claude = sandbox / "claude"
+        home = sandbox / "home"
+        home.mkdir()
+        target = claude / "skills" / "multi-model-orchestration"
+        (target / "references").mkdir(parents=True)
+        (target / "SKILL.md").write_text("original skill\n", encoding="utf-8")
+        (target / "references" / "keep.md").write_text("original reference\n", encoding="utf-8")
+        before = tree_snapshot(target)
+        bin_dir = sandbox / "bin"
+        bin_dir.mkdir()
+        shim = bin_dir / "mv"
+        shim.write_text(
+            '#!/bin/sh\n'
+            'case "$1" in\n'
+            '  */.multi-model-orchestration.stage.*/multi-model-orchestration) exit 1 ;;\n'
+            'esac\n'
+            'exec /bin/mv "$@"\n', encoding="utf-8")
+        shim.chmod(0o700)
+        proc = run_install([], {"CLAUDE_HOME": str(claude), "HOME": str(home),
+                                "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"]})
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("已还原原目录", proc.stderr)
+        self.assertEqual(tree_snapshot(target), before)
+        self.assertEqual(list((claude / "skills").iterdir()), [target])
+        backup_root = claude / ".workflow-backups"
+        self.assertEqual(len(list(backup_root.glob("install-*"))), 1)
+        self.assertEqual(list(backup_root.rglob("SKILL.md")), [], "还原后备份已移回原目标")
 
     def test_preset_agents_migration_and_unrelated_files_preserved(self):
         sandbox = make_sandbox("preset")
@@ -377,7 +495,7 @@ class InstallEntrypoints(unittest.TestCase):
         (agents / "custom.md").write_text("custom sentinel\n", encoding="utf-8")
         (agents / "haiku-5.5-max.md").write_text("legacy alias sentinel\n", encoding="utf-8")
         (agents / "haiku-5.5-max.md.bak").write_text("older bak sentinel\n", encoding="utf-8")
-        (agents / "haiku-5.5.md").write_text("old haiku content\n", encoding="utf-8")
+        (agents / "glm-5.3.md").write_text("old glm content\n", encoding="utf-8")
         settings = claude / "settings.json"
         settings.write_text('{"keep": true}\n', encoding="utf-8")
 
@@ -385,9 +503,13 @@ class InstallEntrypoints(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
         source_names = sorted(p.name for p in SOURCE_AGENTS.glob("*.md"))
-        self.assertEqual(len(source_names), 7)
+        self.assertEqual(len(source_names), 8)
         for name in source_names:
             self.assertEqual((agents / name).read_bytes(), (SOURCE_AGENTS / name).read_bytes(), name)
+        self.assertFalse((agents / "haiku-5.5.md").exists(), "preset 不得创建 haiku-5.5.md")
+        for free_name in ("minimax-m3.1-flash-free.md", "deepseek-v4.1-flash-free.md"):
+            self.assertIn(free_name, source_names, "preset 收录两个 free 档 agent 定义")
+            self.assertTrue((agents / free_name).is_file(), free_name)
 
         self.assertFalse((agents / "haiku-5.5-max.md").exists())
         migrated = [p for p in agents.iterdir() if p.name.startswith("haiku-5.5-max.md.bak.")]
@@ -396,15 +518,15 @@ class InstallEntrypoints(unittest.TestCase):
         self.assertEqual((agents / "haiku-5.5-max.md.bak").read_text(encoding="utf-8"), "older bak sentinel\n")
         self.assertEqual((agents / "custom.md").read_text(encoding="utf-8"), "custom sentinel\n")
 
-        replaced = [p for p in agents.iterdir() if p.name.startswith("haiku-5.5.md.bak.")]
+        replaced = [p for p in agents.iterdir() if p.name.startswith("glm-5.3.md.bak.")]
         self.assertEqual(len(replaced), 1)
-        self.assertEqual(replaced[0].read_text(encoding="utf-8"), "old haiku content\n")
+        self.assertEqual(replaced[0].read_text(encoding="utf-8"), "old glm content\n")
 
         self.assertEqual(settings.read_text(encoding="utf-8"), '{"keep": true}\n')
         self.assertFalse((claude / "CLAUDE.md").exists())
         self.assertTrue((claude / "skills" / "multi-model-orchestration" / "SKILL.md").is_file())
         self.assertIn("/multi-model-orchestration install", proc.stdout)
-        self.assertEqual(proc.stdout.count("agent  →"), 7)
+        self.assertEqual(proc.stdout.count("agent  →"), 8)
 
     def test_arg_errors_and_help_have_no_effect(self):
         sandbox = make_sandbox("args")

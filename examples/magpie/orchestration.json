@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "roles": {
+    "worker": {
+      "candidates": [
+        {"agent": "minimax-m3.1-flash-free", "priority": 1},
+        {"agent": "deepseek-v4.1-flash-free", "priority": 2},
+        {"agent": "deepseek-v4.1-flash", "priority": 3},
+        {"agent": "glm-5.3", "priority": 4},
+        {"agent": "glm-5.3-flash", "priority": 0}
+      ]
+    },
+    "engineer": {
+      "candidates": [
+        {"agent": "gpt-6.1-sol", "priority": 1}
+      ]
+    },
+    "reviewer": {
+      "candidates": [
+        {"agent": "gpt-6.1-sol", "priority": 1},
+        {"agent": "gpt-6-astra", "priority": 2}
+      ]
+    },
+    "researcher": {
+      "candidates": [
+        {"agent": "minimax-m3.1-flash-free", "priority": 1},
+        {"agent": "deepseek-v4.1-flash-free", "priority": 2},
+        {"agent": "deepseek-v4.1-flash", "priority": 3}
+      ]
+    },
+    "editor": {
+      "candidates": [
+        {"agent": "gemini-3.8-flash", "priority": 1}
+      ]
+    }
+  }
+}
