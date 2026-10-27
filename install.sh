@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 安装可移植编排 skill；--preset 额外安装 examples/magpie/agents 的 8 个示例 agent（Magpie 个人示例）并迁移旧档 haiku-5.5-max.md。
+# 安装可移植编排 skill；--preset 额外安装 examples/magpie/agents 的 9 个示例 agent（Magpie 个人示例）并迁移旧档 haiku-5.5-max.md。
 # 默认不改 settings/CLAUDE.md/agents；覆盖前为既有目标创建唯一备份，绝不删除旧 .bak。Bash 3.2 兼容。
 # 写入前先做一次简单预检（目标类型/符号链接/来源）；预检失败时不开始任何写入。
 # 不做多文件事务：失败时如实报告已完成的阶段与备份位置。
@@ -9,7 +9,7 @@ usage() {
   printf '%s\n' \
     '用法：install.sh [--preset] [--help]' \
     '  默认：只复制完整 skill 目录（含 references/assets/scripts）到 <config>/skills/multi-model-orchestration' \
-    '  --preset：另安装 8 个示例 agent（examples/magpie/agents，本仓库 Magpie 个人示例），并迁移旧档 haiku-5.5-max.md（唯一备份，不覆盖旧 .bak）' \
+    '  --preset：另安装 9 个示例 agent（examples/magpie/agents，本仓库 Magpie 个人示例），并迁移旧档 haiku-5.5-max.md（唯一备份，不覆盖旧 .bak）' \
     '配置目录：CLAUDE_HOME > CLAUDE_CONFIG_DIR > HOME/.claude；拒绝符号链接目标；' \
     'skill 备份：<config>/.workflow-backups/install-<唯一名>/multi-model-orchestration（目录权限 0700）；' \
     'preset agent 备份：<原名>.bak.<时间戳>.<PID>（冲突时追加序号）；不删除任何既有备份。'
@@ -238,7 +238,7 @@ fi
 printf '\n'
 printf '完成：可移植编排 skill 已安装到 %s/skills/multi-model-orchestration。\n' "$DEST"
 if [ "$PRESET" = true ]; then
-  printf 'preset 另安装了 8 个示例 agent（examples/magpie 的 Magpie 个人示例；示例路由不是安装前提，需按你的环境确认）。\n'
+  printf 'preset 另安装了 9 个示例 agent（examples/magpie 的 Magpie 个人示例；示例路由不是安装前提，需按你的环境确认）。\n'
 fi
 printf '默认未改 settings、agents（preset 除外）与 CLAUDE.md。\n'
 printf '提示：已有 Claude 订阅且所需 Claude 模型全部可用时，直接使用 Claude Code 原生子代理即可，通常无需本项目的角色编排。\n'

@@ -2,7 +2,7 @@
 
 本目录是仓库维护者的个人 Magpie 接线示例（`./install.sh --preset` 的来源），是一套可行的经验分工，不是通用安装要求；通用安装见 [README](../../README.md#快速开始)。
 
-- [agents/](agents)：8 个示例 agent 定义（7 个核心 + 可选 Gemini；Sol 与 Astra 默认 xhigh，其余默认 max）。
+- [agents/](agents)：9 个示例 agent 定义（8 个核心 + 可选 Gemini；Sol 与 Astra 默认 xhigh，其余默认 max）。
 - [orchestration.json](orchestration.json)：本机角色卡示例，五个岗位的候选与 priority。
 - [routing.md](routing.md)：Magpie 路由 ID 与验证记录。
 - [model-selection.md](model-selection.md)：模型分工与选型依据。
@@ -16,7 +16,7 @@
 
 | 岗位 | 候选（按 priority 顺序） |
 |---|---|
-| worker | `minimax-m3.1-flash-free`(1) → `deepseek-v4.1-flash-free`(2) → `deepseek-v4.1-flash`(3) → `glm-5.3`(4)；`glm-5.3-flash` 停用(0) |
+| worker | `minimax-m3.1-flash-free`(1) → `deepseek-v4.1-flash-free`(2) → `deepseek-v4.1-flash`(3) → `glm-5.3`(4) → `gpt-6.1-terra`(5)；`glm-5.3-flash` 停用(0) |
 | engineer | `gpt-6.1-sol`(1) |
 | reviewer | `gpt-6.1-sol`(1) → `gpt-6-astra`(2) |
 | researcher | `minimax-m3.1-flash-free`(1) → `deepseek-v4.1-flash-free`(2) → `deepseek-v4.1-flash`(3) |

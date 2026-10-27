@@ -658,7 +658,7 @@ export const register: Register = on => {
       }),
     ])
     return { text: [
-      'token-speed 0.4.5 · 各代理独立累计 · 主控 first',
+      'token-speed 0.4.6 · 各代理独立累计 · 主控 first',
       '各代理同一行显示模型、effort、Ctx、Live/Last/Avg（tok/s 只标一次）；工作区最后一行。effort 来源：request 为 turn.step 请求，applied 为 classic 实际档位，configured 为主控配置或明确模型后缀，unknown 为 —。主控 Ctx 来自 session.usage；子代理输入来自最近 CLI uncached+cache读写总量，窗口从 data/model-contexts.json 精确匹配模型尾名/aliases，明确 override 优先官方 default，来源分别 cli-input-window-config、cli-input-official-default 与 cli-input-official-capacity，均不冒充 API 实测窗口；未匹配模型显示 k/?。暗底块状条固定 10 格，每格 8 档共 80 视觉档位（相邻整数百分比可能落在同一档，数字仍为整数 1%），填充固定使用 theme `rate_limit_fill`，轨道为 `rate_limit_empty`，窄屏可省条；无占用读数显示 —%。',
       `context registry v${registry.version}${registry.fallback ? ' (load failed: confirmed overrides only)' : ''} · 优先实际 session 窗口、明确 override、官方 default（未给默认时明确 capacity）、未知；官方 max 仅元数据，不因 [1m] 自动选择。`,
       ...provenance,

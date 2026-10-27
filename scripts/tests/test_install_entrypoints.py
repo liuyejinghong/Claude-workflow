@@ -2,7 +2,7 @@
 """根入口合同测试：install.sh 与 scripts/verify.sh。
 
 覆盖合同 Agreed architecture 第 1 条与 Root verify.sh：
-- 默认只安装完整 skill（不写 agents/settings/CLAUDE.md），--preset 才装 8 个示例 agent
+- 默认只安装完整 skill（不写 agents/settings/CLAUDE.md），--preset 才装 9 个示例 agent
   并迁移 haiku-5.5-max.md；唯一备份绝不覆盖既有 .bak；参数错误零副作用；符号链接目标拒绝。
 - verify.sh 默认委托已安装 skill 的 scripts/setup.py verify --config-dir；--models 走
   scan --query-models；--smoke 必须显式 SMOKE_MODEL，恰好两轮工具往返、不先 GET 模型列表、
@@ -503,7 +503,7 @@ class InstallEntrypoints(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
         source_names = sorted(p.name for p in SOURCE_AGENTS.glob("*.md"))
-        self.assertEqual(len(source_names), 8)
+        self.assertEqual(len(source_names), 9)
         for name in source_names:
             self.assertEqual((agents / name).read_bytes(), (SOURCE_AGENTS / name).read_bytes(), name)
         self.assertFalse((agents / "haiku-5.5.md").exists(), "preset 不得创建 haiku-5.5.md")
@@ -526,7 +526,7 @@ class InstallEntrypoints(unittest.TestCase):
         self.assertFalse((claude / "CLAUDE.md").exists())
         self.assertTrue((claude / "skills" / "multi-model-orchestration" / "SKILL.md").is_file())
         self.assertIn("/multi-model-orchestration install", proc.stdout)
-        self.assertEqual(proc.stdout.count("agent  →"), 8)
+        self.assertEqual(proc.stdout.count("agent  →"), 9)
 
     def test_arg_errors_and_help_have_no_effect(self):
         sandbox = make_sandbox("args")
