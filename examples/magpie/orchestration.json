@@ -7,7 +7,8 @@
         {"agent": "deepseek-v4.1-flash-free", "priority": 2},
         {"agent": "deepseek-v4.1-flash", "priority": 3},
         {"agent": "glm-5.3", "priority": 4},
-        {"agent": "glm-5.3-flash", "priority": 0}
+        {"agent": "glm-5.3-flash", "priority": 0},
+        {"agent": "gpt-6.1-terra", "priority": 5}
       ]
     },
     "engineer": {

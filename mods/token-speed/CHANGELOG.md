@@ -1,5 +1,14 @@
 # token-speed Changelog
 
+## 0.4.6
+
+对应 tag `token-speed-v0.4.6`。
+
+- 新增 `gpt-6.1-terra` 官方窗口记录（2026-10-27 核验）：Codex 官方默认 500000、最大 872000，另带 API 总上下文 1050000 元数据。来源为官方 Codex [`models.json`](https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json)，API 模型页列为附加来源；官方 models 表由 24 条增至 25 条。
+- 新增用户确认的 `gpt-6-astra` 500000 override（`User-confirmed CLI window`），并加入 registry 读取或严格解析失败时的后备 override，与既有 `gpt-6.1-sol` 500000 一致。
+- 以上数值只作为上下文分母，不是性能、吞吐或上游实际 cap 的保证。Terra 的 Codex max 872000 与 API 总上下文 1050000 同样只记录为元数据，不因 `[1m]` 自动选用最大值，registry 不把最大窗口当默认。
+- `/tok-speed` 命令文本版本同步为 0.4.6；更新后 reload 生效。
+
 ## 0.4.5
 
 对应 tag `token-speed-v0.4.5`。

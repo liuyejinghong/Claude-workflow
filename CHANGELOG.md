@@ -4,7 +4,13 @@
 
 ## Unreleased
 
-- 暂无待发布内容。
+- 个人预设新增 Terra worker 示例 `gpt-6.1-terra`（`examples/magpie/agents/gpt-6.1-terra.md`，路由 `codex/gpt-6.1-terra:max`，effort `max`）：主控已定方案下的常规实现、已知根因修复、测试、保持行为重构与取证；根因、架构与高风险实施决策及最终验收仍在主控与 Sol。worker 角色卡中排 priority 5，排在既有候选之后。preset 示例数由 8 增至 9，`install.sh`、安装入口合同测试、Magpie 示例与安装参考同步；不改变根 `VERSION`。
+
+## Mod 发布：token-speed 0.4.6 - 2026-10-27
+
+- 新增 `gpt-6.1-terra` 官方窗口记录：Codex 官方默认 500000、最大 872000，另带 API 总上下文 1050000 元数据（官方 Codex `models.json` 与 API 文档，2026-10-27 核验），官方 models 表由 24 条增至 25 条。
+- 新增用户确认的 `gpt-6-astra` 500000 override，并加入 registry 读取失败时的后备 override。两个数值都只作上下文分母，不是性能或上游实际 cap 的保证。
+- 详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.4.6` 说明），不改变编排仓库版本。
 
 ## Mod 发布：token-speed 0.4.5 - 2026-10-20
 

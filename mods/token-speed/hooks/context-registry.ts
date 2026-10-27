@@ -19,6 +19,7 @@ export type WindowReading = { window: number; source: 'configured' | 'official-d
 // Keep the already-confirmed user windows if the packaged registry cannot load.
 const FALLBACK_OVERRIDES: ContextOverride[] = [
   { id: 'gpt-6.1-sol', aliases: [], window: 500000, reason: 'User-confirmed CLI window' },
+  { id: 'gpt-6-astra', aliases: [], window: 500000, reason: 'User-confirmed CLI window' },
   { id: 'glm-5.3', aliases: [], window: 1000000, reason: 'User-confirmed CLI window' },
   { id: 'glm-5.3-flash', aliases: [], window: 1000000, reason: 'User-confirmed CLI window' },
 ]

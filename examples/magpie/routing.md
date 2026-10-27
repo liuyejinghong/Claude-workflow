@@ -10,6 +10,7 @@
 |---|---|---|---|
 | `gpt-6.1-sol` | `codex/gpt-6.1-sol:xhigh` | `codex/gpt-6.1-sol:xhigh` | xhigh |
 | `gpt-6-astra` | `codex/gpt-6-astra:xhigh` | `codex/gpt-6-astra:xhigh` | xhigh |
+| `gpt-6.1-terra` | `codex/gpt-6.1-terra:max` | `codex/gpt-6.1-terra:max` | max |
 | `glm-5.3` | `zcode/glm-5.3` | `zcode/glm-5.3[1m]` | max |
 | `glm-5.3-flash` | `zcode/glm-5.3-flash` | `zcode/glm-5.3-flash[1m]` | max |
 | `minimax-m3.1-flash-free` | `group/minimax-m3.1-flash-free:max` | `group/minimax-m3.1-flash-free:max[1m]` | max |
@@ -17,7 +18,11 @@
 | `deepseek-v4.1-flash` | `group/deepseek-v4.1-flash:max` | `group/deepseek-v4.1-flash:max[1m]` | max |
 | `gemini-3.8-flash`（可选） | `commandcode/google/gemini-3.8-flash` | `commandcode/google/gemini-3.8-flash` | max |
 
-具名子代理中 Sol 与 Astra 默认 `xhigh`，其余默认 `max`，不按 effort 拆分代理。GPT、DeepSeek（含两个 free 档）与 MiniMax 使用冒号 effort，GLM 使用 zcode 限定名以避免默认/粘滞渠道错选。`[1m]` 是 Claude Code 的窗口声明，由客户端剥离，不属于 Magpie 请求 route；`codex/gpt-6.1-sol:xhigh` 与 `codex/gpt-6-astra:xhigh` 无 `[1m]`。Gemini 路由对外提供多档 effort；agent 默认声明 `max`，该档位已随子代理实际调用验证可用，未核验其在各上游的最终映射细节。窗口、压缩与输出上限参数的区别与排查见 [references/third-party-context.md](../../skills/multi-model-orchestration/references/third-party-context.md)。
+具名子代理中 Sol 与 Astra 默认 `xhigh`，其余默认 `max`，不按 effort 拆分代理。GPT、DeepSeek（含两个 free 档）与 MiniMax 使用冒号 effort，GLM 使用 zcode 限定名以避免默认/粘滞渠道错选。`[1m]` 是 Claude Code 的窗口声明，由客户端剥离，不属于 Magpie 请求 route；`codex/gpt-6.1-sol:xhigh`、`codex/gpt-6-astra:xhigh` 与 `codex/gpt-6.1-terra:max` 无 `[1m]`，Terra 的窗口以官方 Codex 默认 500000 / max 872000（API 总上下文 1050000）记录在 token-speed registry，不通过 `[1m]` 声明。Gemini 路由对外提供多档 effort；agent 默认声明 `max`，该档位已随子代理实际调用验证可用，未核验其在各上游的最终映射细节。窗口、压缩与输出上限参数的区别与排查见 [references/third-party-context.md](../../skills/multi-model-orchestration/references/third-party-context.md)。
+
+## 验证记录（2026-10-27）
+
+- Terra `max`：原生 CLI `claude --agent gpt-6.1-terra --print` 加载已安装定义，未用 `--agents` / `--model` / `--effort` 覆盖；原生 Read 读取随机文件并准确返回内容，退出码 0、两轮完成、无权限拒绝，modelUsage 为 `codex/gpt-6.1-terra:max`、contextWindow 为 500000。仅验证最小连通与工具往返，未做能力或吞吐评测。
 
 ## 验证记录（2026-10-20）
 
@@ -40,7 +45,7 @@
 
 历史观察：短请求工具往返成功不能证明完整 CLI 兼容；Haiku 聚合子代理实际 CLI 调用曾报 Command Code `Invalid input at messages.1.role`（会话内 `system` 被该渠道拒绝），待 Magpie 提供兼容回退或上游支持。
 
-**Gemini（可选）：** 使用 `commandcode` provider，需在 Magpie UI 中配置凭据与 route；仓库不包含用户凭据。该路由已完成连通与工具调用验证。未配置时 `gemini-3.8-flash` 子代理不可用，不影响其余 7 个核心 agent。Gemini 上游单次输出上限最高 65536，若 `CLAUDE_CODE_MAX_OUTPUT_TOKENS` 设置更高会报 400，需在该会话内临时设 `CLAUDE_CODE_MAX_OUTPUT_TOKENS=65536`（如 `claude --settings '{"env":{"CLAUDE_CODE_MAX_OUTPUT_TOKENS":"65536"}}'`），否则会报 400；该覆盖对整个会话的所有模型生效，只影响单次输出上限。
+**Gemini（可选）：** 使用 `commandcode` provider，需在 Magpie UI 中配置凭据与 route；仓库不包含用户凭据。该路由已完成连通与工具调用验证。未配置时 `gemini-3.8-flash` 子代理不可用，不影响其余 8 个核心 agent。Gemini 上游单次输出上限最高 65536，若 `CLAUDE_CODE_MAX_OUTPUT_TOKENS` 设置更高会报 400，需在该会话内临时设 `CLAUDE_CODE_MAX_OUTPUT_TOKENS=65536`（如 `claude --settings '{"env":{"CLAUDE_CODE_MAX_OUTPUT_TOKENS":"65536"}}'`），否则会报 400；该覆盖对整个会话的所有模型生效，只影响单次输出上限。
 
 ## 验证记录（2026-10-14）
 
