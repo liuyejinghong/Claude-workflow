@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 import type { EngineInterface } from 'claude-code'
-import { localOrigin, measured, queryRows, uniqueMatches, rememberEvidence, AVG_WINDOW_MS, MAX_EVIDENCE } from '../hooks/magpie'
+import { localOrigin, measured, queryRows, uniqueMatches, rememberEvidence, pruneEvidence, AVG_WINDOW_MS, MAX_EVIDENCE } from '../hooks/magpie'
 import type { Evidence, GatewayRow } from '../hooks/magpie'
 import { START, PROBE, req, result, usage, gateway, setup, command, state, consume, json, certifiedSample, curlResponse } from './magpie-fixture'
 
@@ -73,7 +73,7 @@ test('real hook observes the request, preserves stream/result, then asynchronous
   await ui.unmount()
 })
 
-test('weighted answer tokens/window sum, failure clears only Last and turn totals do not add a sample', OPTIONS, async ($, on) => {
+test('weighted answer tokens/window sum, failure preserves Last and turn totals do not add a sample', OPTIONS, async ($, on) => {
   const { clock, data } = setup(on)
   on('turn.step', async function* (_$, e) {
     const start = e.index === 0 ? 0 : e.index === 1 ? 4294 : 9967
@@ -88,7 +88,7 @@ test('weighted answer tokens/window sum, failure clears only Last and turn total
     await clock.settle(); await clock.advance(ms!); await pending; await clock.advance(2000)
   }
   const bucket = (await state($)).rows[0]?.models[0]
-  expect(bucket).toMatchObject({ outputTokens: 333, durationMs: 2967, samples: 2, lastApi: null })
+  expect(bucket).toMatchObject({ outputTokens: 333, durationMs: 2967, samples: 2, lastApi: 184000 / 1673 })
   expect((await command($)).text).toMatch('Avg 112.2 tok/s')
   await $.turn.complete({ turnId: 'turn-2', answer: '', isAborted: false, reason: 'answer', durationMs: 100, usage: usage(99999) })
   expect((await state($)).rows[0]?.models[0]).toEqual(bucket)
@@ -215,9 +215,9 @@ test('query period reaches before an observed request older than 48h, including 
     return curlResponse(argv, json({ offset: 0, total: 1,
       rows: [gateway(start, { ms: now - start - 1000, ttft_ms: 1000 })] }))
   } } } as unknown as EngineInterface
-  const rows = await queryRows(fake, 'http://localhost', 'session', start, now)
+  const { rows } = await queryRows(fake, 'http://localhost', 'session', start, now)
   expect(rows.length).toBe(1)
-  expect(urls[0]).toMatch('last%3A4321m')
+  expect(urls[0]).toMatch('last%3A259260s')
   expect(rows[0]?.finishedAt).toBe(now - 1000)
 })
 
@@ -247,7 +247,7 @@ test('five empty-accounting retries stop and never rescan indefinitely', OPTIONS
 
 test('five slow 501-row batches stop after fifteen curls despite every batch expiring', OPTIONS, async ($, on) => {
   const { clock, data } = setup(on)
-  data.rows = [gateway(), ...Array.from({ length: 500 }, (_, i) => gateway(-1000 - i,
+  data.rows = [gateway(), ...Array.from({ length: 500 }, (_, i) => gateway(0,
     { route_id: i + 2, req: 'other/model' }))]
   data.response = async url => {
     await clock.sleep(1400)
@@ -271,7 +271,7 @@ test('five slow 501-row batches stop after fifteen curls despite every batch exp
 
 test('an expired fifth batch cannot remove fresh pending after clear and a new session', OPTIONS, async ($, on) => {
   const { clock, data } = setup(on)
-  const rows = [gateway(), ...Array.from({ length: 500 }, (_, i) => gateway(-1000 - i,
+  const rows = [gateway(), ...Array.from({ length: 500 }, (_, i) => gateway(0,
     { route_id: i + 2, req: 'other/model' }))]
   let release: (() => void) | undefined
   data.response = async url => {
@@ -324,7 +324,7 @@ test('reload preserves certified samples, aborts stale active and excludes prior
   await $.session.start(START)
   let row = (await state($)).rows[0]
   expect(row?.status).toBe('aborted'); expect(row?.active).toBeNull(); expect(row?.effort).toBe('max')
-  expect(row?.models[0]).toMatchObject({ samples: 1, lastApi: null })
+  expect(row?.models[0]).toMatchObject({ samples: 1, lastApi: 28.6 })
   expect((await command($)).text).toMatch('Avg 28.6 tok/s')
   await clock.advance(999)
   expect((await command($)).text).toMatch('24h 1 个请求')
@@ -404,17 +404,17 @@ for (const mode of ['late-candidate', 'missing', 'different-key', 'normal', 'fai
     expect(buckets.find(bucket => bucket.model === 'channel/model')).toMatchObject({ samples: keep ? 1 : 0,
       lastApi: keep ? 149000 / 1294 : null })
     expect(buckets.find(bucket => bucket.model === 'other/model')?.samples).toBe(mode === 'failed-query' ? 0 : 1)
-    expect(data.calls[calls]).toMatch('last%3A15m')
+    expect(data.calls[calls]).toMatch('last%3A64s')
   })
 }
 
-test('restored certification rechecks both ambiguity directions and covers its older start', OPTIONS, async ($, on) => {
+test('short recent query retains restored certification outside its covered start', OPTIONS, async ($, on) => {
   const { clock, data } = setup(on)
   const start = -20 * 60000
   const aRow = gateway(start, { route_id: 1 })
   const fake = { process: { run: async (argv: readonly string[]) => curlResponse(argv,
     json({ offset: 0, total: 1, rows: [aRow] })) } } as unknown as EngineInterface
-  const key = (await queryRows(fake, 'http://localhost', 'session', start, 0))[0]!.key
+  const key = (await queryRows(fake, 'http://localhost', 'session', start, 0)).rows[0]!.key
   let seeded = false
   on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => {
     if (seeded) return next(e)
@@ -430,8 +430,8 @@ test('restored certification rechecks both ambiguity directions and covers its o
   await $.session.start(START)
   const step = consume($.turn.step(req(1, 'other/model')))
   await clock.settle(); await clock.advance(4000); await step
-  expect(data.calls[0]).toMatch('last%3A22m')
-  expect((await state($)).rows[0]?.models.find(bucket => bucket.model === 'channel/model')).toMatchObject({ samples: 0, lastApi: null })
+  expect(data.calls[0]).toMatch('last%3A64s')
+  expect((await state($)).rows[0]?.models.find(bucket => bucket.model === 'channel/model')).toMatchObject({ samples: 1, lastApi: 149000 / 1294 })
   expect((await state($)).rows[0]?.models.find(bucket => bucket.model === 'other/model')?.samples).toBe(1)
 })
 
@@ -440,7 +440,7 @@ test('restored row matching a newly observed overlapping step revokes the prior 
   data.rows = [gateway()]
   const fake = { process: { run: async (argv: readonly string[]) => curlResponse(argv,
     json({ offset: 0, total: 1, rows: data.rows })) } } as unknown as EngineInterface
-  const key = (await queryRows(fake, 'http://localhost', 'session', 0, 0))[0]!.key
+  const key = (await queryRows(fake, 'http://localhost', 'session', 0, 0)).rows[0]!.key
   let seeded = false
   on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => {
     if (seeded) return next(e)
@@ -540,6 +540,7 @@ test('evidence capacity recovers after 24h even with no pending poll', async () 
     counts: { input: 1, write: 0, output: 1, read: 0 } }
   for (let i = 0; i < MAX_EVIDENCE; i++) evidence.set(String(i), { ...base, id: String(i) })
   expect(rememberEvidence(evidence, pending, base, AVG_WINDOW_MS - 1)).toBe(false)
+  expect(pruneEvidence(evidence, pending, AVG_WINDOW_MS)).toBe(0)
   expect(rememberEvidence(evidence, pending, { ...base, finishedAt: AVG_WINDOW_MS }, AVG_WINDOW_MS)).toBe(true)
   expect(evidence.size).toBe(1); expect(pending.size).toBe(1)
 })

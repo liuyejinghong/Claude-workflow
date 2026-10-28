@@ -1,6 +1,6 @@
 import { mock } from 'claude-code/testing'
 import type { Engine, MockClock, Plugin } from 'claude-code/testing'
-import type { HookStream, On, ProcessRunInit, ProcessRunResult, TurnStepChunk, TurnStepInput, TurnStepResult, TurnUsage } from 'claude-code'
+import type { AgentInfo, HookStream, On, ProcessRunInit, ProcessRunResult, TurnStepChunk, TurnStepInput, TurnStepResult, TurnUsage } from 'claude-code'
 import type { TokenSpeedSnapshot } from '../types'
 
 export const START = { cwd: '/test', surface: 'terminal', isInteractive: true } as const
@@ -27,14 +27,14 @@ export function setup(on: On, env: Record<string, string> = { ANTHROPIC_BASE_URL
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
   on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
   on('command.register', async (_$, e) => ({ value: { command: e.name } }))
-  on('agent.list', async () => ({ value: [] }))
+  on('agent.list', async () => ({ value: await data.agents() }))
   on('turn.complete', async (_$, e) => ({ text: e.answer, usage: e.usage }))
   on('ui.render', { component: 'AbovePrompt' }, async ($, e) => {
     const { Text } = $.ui.resolve(e)
     return <Text key="rest">rest band</Text>
   })
   const data = { rows: [] as Raw[], calls: [] as string[], active: 0, maximum: 0,
-    session: async () => 'session',
+    session: async () => 'session', agents: async (): Promise<AgentInfo[]> => [],
     argv: [] as string[][], init: [] as (ProcessRunInit | undefined)[],
     process: null as null | ((argv: readonly string[], init?: ProcessRunInit) => Promise<ProcessRunResult>),
     response: null as null | ((url: string) => Promise<{ status: number; text: string }>) }
@@ -48,7 +48,9 @@ export function setup(on: On, env: Record<string, string> = { ANTHROPIC_BASE_URL
     try {
       if (data.process) return { value: await data.process(e.argv, e.init) }
       const offset = Number(url.match(/offset=(\d+)/)?.[1] ?? 0)
-      const rows = [...data.rows].sort((a, b) => Date.parse(String(b.t)) - Date.parse(String(a.t)))
+      const seconds = Number(decodeURIComponent(url).match(/period=last:(\d+)s/)?.[1] ?? Infinity)
+      const rows = [...data.rows].filter(row => Date.parse(String(row.t)) >= clock.now() - seconds * 1000)
+        .sort((a, b) => Date.parse(String(b.t)) - Date.parse(String(a.t)))
       const response = data.response ? await data.response(url)
         : json({ total: rows.length, offset, rows: rows.slice(offset, offset + 500) })
       return { value: curlResponse(e.argv, response) }

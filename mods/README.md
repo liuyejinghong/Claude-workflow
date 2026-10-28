@@ -4,7 +4,7 @@
 
 | Mod | 版本 | 功能与安装 |
 |---|---|---|
-| token-speed | 0.5.0 | 主控与每个活跃子代理各一行，显示模型、effort、上下文占用与输出速率（Last / Avg），工作区行在最后；测速依赖本机 Magpie 和 `curl`，离线模型窗口表见 [model-contexts.json](token-speed/data/model-contexts.json)。详见 [token-speed README](token-speed/README.md) |
+| token-speed | 0.6.0 | 主控与每个活跃子代理各一行，显示模型、effort、上下文占用与输出速率（Last / Avg），工作区行在最后；测速依赖本机 Magpie 和 `curl`，离线模型窗口表见 [model-contexts.json](token-speed/data/model-contexts.json)。详见 [token-speed README](token-speed/README.md) |
 
 安装前请查看各 mod 的 CLI 兼容版本、安装前提与限制。Marketplace 名称为 `claude-workflow-mods`，安装命令如下：
 
@@ -13,6 +13,6 @@
 /plugin install token-speed@claude-workflow-mods
 ```
 
-也可用固定 tag `token-speed-v0.5.0` 获取源文件，并按 [token-speed README](token-speed/README.md) 中的 `--plugin-dir` 方式从 checkout 加载。
+也可用固定 tag `token-speed-v0.6.0` 获取源文件，并按 [token-speed README](token-speed/README.md) 中的 `--plugin-dir` 方式从 checkout 加载。
 
 每个 mod 独立维护版本；版本与 tag 规则见 [VERSIONING.md](VERSIONING.md)，token-speed 的历史见 [CHANGELOG.md](token-speed/CHANGELOG.md)。

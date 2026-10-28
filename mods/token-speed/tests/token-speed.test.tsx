@@ -291,7 +291,7 @@ test('session.start discards stale reload active but preserves metadata and disc
   await $.session.start(START)
   await $.session.start(START)
   const held = await state($)
-  expect(held.models[0]?.samples).toBe(0)
+  expect(held.models).toEqual([])
   expect(held.active).toBeNull()
   expect(held.status).toBe('aborted')
   expect((await snapshotState($)).version).toBe(2)

@@ -2,6 +2,9 @@ export type TokenSpeedStatus = 'idle' | 'waiting' | 'streaming' | 'aborted' | 'e
 
 export type TokenSpeedEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | number
 
+export type TokenSpeedMeasurementStatus = 'waiting' | 'streaming' | 'pending' | 'measured'
+  | 'failed' | 'unmeasurable' | 'ambiguous' | 'unavailable'
+
 export type TokenSpeedSample = {
   /** Magpie request completion epoch ms. */
   at: number
@@ -20,7 +23,12 @@ export type TokenSpeedModelStats = {
   outputTokens: number
   durationMs: number
   samples: number
+  /** Derived compatibility value; only a certified last/log sample may supply it. */
   lastApi: number | null
+  /** Latest completed, still certified sample, independent of the 24h Avg window. */
+  last?: TokenSpeedSample
+  /** State of latestStep, never the state of an older late-accounting request. */
+  latestStatus?: TokenSpeedMeasurementStatus
   /** Only this tagged metric may feed current Last/Avg. Untagged history is legacy. */
   metric?: 'magpie-measured-v1'
   latestStep?: string
@@ -73,6 +81,8 @@ export type TokenSpeedWorkspace = { name: string; branch: string | null }
 export type TokenSpeedSessionInfo = {
   /** Session-state lease rejects asynchronous writes from a replaced module. */
   observationGeneration?: string
+  /** Persisted before retiring working evidence; clock rollback cannot reuse forgotten competitors. */
+  evidenceRetiredThrough?: number
   /** Last observed host configuration; distinct from the latest actual request. */
   configuredModel?: string
   context: TokenSpeedContextInfo
