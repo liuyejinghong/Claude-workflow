@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "token-speed",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "source": "./mods/token-speed",
       "description": "主控与活跃子代理各一行显示 Last 和 24 小时 Avg 测速，依赖本机 Magpie 与 curl"
     }

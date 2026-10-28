@@ -1,9 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import { fallbackRegistry, lookupWindow, registryLoader } from './context-registry'
-import { MAGPIE_METRIC, magpieOrigin, queryRows, requestModel, uniqueMatches, usageCounts, rememberEvidence } from './magpie'
+import { MAGPIE_METRIC, magpieOrigin, queryRows, requestModel, matchCandidates, uniqueMatches, usageCounts, rememberEvidence, pruneEvidence, SHARED_FINISH_MS } from './magpie'
 import type { Evidence } from './magpie'
 import type { AgentInfo, EngineInterface, Register, ThemeKey, Timer, TurnStepChunk, TurnStepResult } from 'claude-code'
-import type { TokenSpeedActive, TokenSpeedContextInfo, TokenSpeedEffort, TokenSpeedModelStats, TokenSpeedRow,
+import type { TokenSpeedActive, TokenSpeedContextInfo, TokenSpeedEffort, TokenSpeedMeasurementStatus, TokenSpeedModelStats, TokenSpeedRow,
   TokenSpeedSample, TokenSpeedSessionInfo, TokenSpeedSnapshot, TokenSpeedStatus, TokenSpeedWorkspace } from '../types'
 
 const TICK_MS = 250
@@ -56,24 +56,45 @@ const status = (value: unknown): TokenSpeedStatus => value === 'waiting' || valu
   || value === 'aborted' || value === 'error' || value === 'usage unavailable' ? value : 'idle'
 function requestLog(value: unknown): TokenSpeedSample[] {
   if (!Array.isArray(value)) return []
-  return value.filter((item): item is TokenSpeedSample => object(item) && finite(item.at) && finite(item.tokens)
-    && item.tokens > 0 && finite(item.ms) && item.ms >= 100 && item.tokens * 1000 / item.ms <= 10000
-    && typeof item.key === 'string' && typeof item.step === 'string' && finite(item.startedAt)
-    && finite(item.finishedAt) && object(item.counts)
-    && ['input', 'write', 'output', 'read'].every(key => finite((item.counts as Record<string, unknown>)[key]) && Number.isSafeInteger((item.counts as Record<string, unknown>)[key]) && ((item.counts as Record<string, unknown>)[key] as number) >= 0))
+  const keys = new Set<string>(), steps = new Set<string>()
+  return value.filter((item): item is TokenSpeedSample => {
+    if (!(object(item) && finite(item.at) && finite(item.tokens) && Number.isSafeInteger(item.tokens)
+      && item.tokens > 0 && finite(item.ms) && item.ms >= 100 && item.tokens * 1000 / item.ms <= 10000
+      && typeof item.key === 'string' && !!item.key && typeof item.step === 'string' && !!item.step && finite(item.startedAt)
+      && finite(item.finishedAt) && item.finishedAt >= item.startedAt && Math.abs(item.at - item.finishedAt) <= 2000
+      && object(item.counts) && ['input', 'write', 'output', 'read'].every(key =>
+        finite((item.counts as Record<string, unknown>)[key]) && Number.isSafeInteger((item.counts as Record<string, unknown>)[key])
+        && ((item.counts as Record<string, unknown>)[key] as number) >= 0)
+      && (item.counts.output as number) > 0 && item.tokens <= (item.counts.output as number))) return false
+    if (keys.has(item.key) || steps.has(item.step)) return false
+    keys.add(item.key); steps.add(item.step)
+    return true
+  })
+}
+const measurementStatuses = new Set<TokenSpeedMeasurementStatus>(['waiting', 'streaming', 'pending', 'measured',
+  'failed', 'unmeasurable', 'ambiguous', 'unavailable'])
+function latestSample(samples: TokenSpeedSample[], now = Infinity): TokenSpeedSample | undefined {
+  return samples.reduce<TokenSpeedSample | undefined>((last, sample) => sample.at <= now
+    && (!last || sample.at > last.at || sample.at === last.at && (sample.finishedAt ?? 0) > (last.finishedAt ?? 0)) ? sample : last, undefined)
+}
+function sampleRate(sample: TokenSpeedSample | undefined): number | null {
+  return sample ? sample.tokens * 1000 / sample.ms : null
 }
 function stats(value: unknown): TokenSpeedModelStats[] {
   if (!Array.isArray(value)) return []
-  // All earlier speed metrics are discarded; agent/context/effort metadata survive.
+  // Earlier estimated metrics and unattested scalar Last values cannot be migrated.
   return value.flatMap(item => {
     if (!object(item) || typeof item.model !== 'string' || item.metric !== MAGPIE_METRIC) return []
     const log = requestLog(item.log)
-    return [{ model: item.model, metric: MAGPIE_METRIC, log,
+    const last = requestLog([item.last])[0] ?? latestSample(log)
+    return [{ model: item.model, metric: MAGPIE_METRIC, log, last,
       outputTokens: log.reduce((n, sample) => n + sample.tokens, 0),
       durationMs: log.reduce((n, sample) => n + sample.ms, 0), samples: log.length,
       latestStep: typeof item.latestStep === 'string' ? item.latestStep : undefined,
+      latestStatus: measurementStatuses.has(item.latestStatus as TokenSpeedMeasurementStatus)
+        ? item.latestStatus as TokenSpeedMeasurementStatus : log.some(sample => sample.step === item.latestStep) ? 'measured' : undefined,
       validationBatch: typeof item.validationBatch === 'string' ? item.validationBatch : undefined,
-      lastApi: finite(item.lastApi) && item.lastApi > 0 && item.lastApi <= 10000 ? item.lastApi : null }]
+      lastApi: sampleRate(last) }]
   })
 }
 function activeValue(value: unknown): TokenSpeedActive | null {
@@ -101,6 +122,7 @@ function sessionInfo(value: unknown): TokenSpeedSessionInfo {
   const held = object(value) ? value : {}
   return { context: contextInfo(held.context), workspace: workspaceValue(held.workspace),
     ...(typeof held.observationGeneration === 'string' ? { observationGeneration: held.observationGeneration } : {}),
+    ...(finite(held.evidenceRetiredThrough) ? { evidenceRetiredThrough: held.evidenceRetiredThrough } : {}),
     ...(typeof held.configuredModel === 'string' ? { configuredModel: held.configuredModel } : {}) }
 }
 // Earlier state retains metadata, but only certified Magpie samples survive.
@@ -243,7 +265,7 @@ async function reconcile($: EngineInterface, adoptExisting = false): Promise<voi
         } else if (held && (agent.status === 'completed' || agent.status === 'failed' || agent.status === 'killed')) {
           ended.push({ id: agent.id, requestId: held.active?.id })
           changed = changeRow(changed, agent.id, r => ({ ...r, description: agent.description, running: false,
-            models: r.active ? invalidateLast(r, r.active.model) : r.models,
+            models: r.active ? requestStatus(r, r.active.model, r.active.id, 'failed') : r.models,
             active: null, status: agent.status === 'failed' ? 'error' : agent.status === 'killed' ? 'aborted' : 'idle' }))
         }
       }
@@ -253,7 +275,7 @@ async function reconcile($: EngineInterface, adoptExisting = false): Promise<voi
     for (const item of ended) {
       if (activeRequests.get(item.id)?.id === item.requestId) {
         activeRequests.get(item.id)!.cancelled = true
-        activeRequests.delete(item.id)
+        activeRequests.delete(item.id); evidenceRevision++
       }
     }
   } finally { listBusy = false }
@@ -327,8 +349,11 @@ function bucketFor(r: TokenSpeedRow, model: string): TokenSpeedModelStats {
 function withBucket(r: TokenSpeedRow, bucket: TokenSpeedModelStats): TokenSpeedModelStats[] {
   return [...r.models.filter(item => item.model !== bucket.model), bucket]
 }
-function invalidateLast(r: TokenSpeedRow, model: string | null): TokenSpeedModelStats[] {
-  return model === null ? r.models : withBucket(r, { ...bucketFor(r, model), lastApi: null })
+function requestStatus(r: TokenSpeedRow, model: string | null, id: string | undefined,
+  value: TokenSpeedMeasurementStatus): TokenSpeedModelStats[] {
+  if (model === null || !id) return r.models
+  const bucket = bucketFor(r, model)
+  return bucket.latestStep !== id ? r.models : withBucket(r, { ...bucket, latestStatus: value })
 }
 async function finish($: EngineInterface, active: ObservedRequest, result: TurnStepResult): Promise<void> {
   const endedAt = await $.clock.now()
@@ -341,137 +366,252 @@ async function finish($: EngineInterface, active: ObservedRequest, result: TurnS
     ? inputs.reduce((sum, n) => sum + n, 0) : null
   const held = await readState($)
   if (active.epoch !== epoch || active.cancelled || !holdsLease(held)) return
+  let measurement: TokenSpeedMeasurementStatus = !completed ? 'failed' : 'unmeasurable'
   if (completed && !truncated && counts && finite(endedAt) && endedAt >= active.startedAt) {
     const step = { id: active.id, loopId: active.loopId, model: active.model, startedAt: active.startedAt, finishedAt: endedAt, counts }
-    rememberEvidence(evidence, pending, step, endedAt)
+    await retireEvidence($, active.epoch, endedAt, step)
+    if (active.epoch !== epoch || active.cancelled || !holdsLease(await readState($))) return
+    measurement = rememberEvidence(evidence, pending, step, endedAt) ? 'pending' : 'unavailable'
+    evidenceRevision++
   }
   await mutate($, active.epoch, state => changeRow(state, active.loopId, r => {
-    if (r.active?.id !== active.id) return r
-    return { ...r, context: active.loopId === 'main' ? r.context
+    const models = requestStatus(r, active.model, active.id, measurement)
+    if (r.active?.id !== active.id) return models === r.models ? r : { ...r, models }
+    return { ...r, models, context: active.loopId === 'main' ? r.context
       : childContext(active.model, inputTokens !== null && finite(inputTokens) ? inputTokens : null),
       active: null, status: !completed ? 'aborted' : counts ? 'idle' : 'usage unavailable' }
   }))
 }
 async function failed($: EngineInterface, active: ObservedRequest, failure: TokenSpeedStatus): Promise<void> {
   await mutate($, active.epoch, state => changeRow(state, active.loopId, r => {
-    if (r.active?.id !== active.id) return r
-    return { ...r, active: null, status: failure, models: invalidateLast(r, active.model) }
+    const models = requestStatus(r, active.model, active.id, failure === 'usage unavailable' ? 'unavailable' : 'failed')
+    if (r.active?.id !== active.id) return models === r.models ? r : { ...r, models }
+    return { ...r, active: null, status: failure, models }
   }))
 }
 
 const evidence = new Map<string, Evidence>()
 const pending = new Map<string, { attempts: number; due: number }>()
+let evidenceRevision = 0
 let sessionId: string | null = null
 let flight: object | null = null
 function invalidateMeasurements(): void {
-  epoch++
+  epoch++; evidenceRevision++
   pending.clear(); evidence.clear(); sessionId = null
   // Keep the physical curl/state flight locked until it settles; lifecycle and
   // lease guards discard stale work even when the host call is already in flight.
 }
+function retainedLastIds(state: TokenSpeedSnapshot): Set<string> {
+  return new Set(state.rows.flatMap(r => r.models.flatMap(bucket => bucket.last?.step ? [bucket.last.step] : [])))
+}
+/** Save the retirement boundary before forgetting competitors. Failed writes or
+ * concurrent observations leave the working index intact, including across reload.
+ */
+async function retireEvidence($: EngineInterface, heldEpoch: number, now: number, incoming?: Evidence,
+  current: () => boolean = () => true): Promise<number | null> {
+  const heldRevision = evidenceRevision, removed = new Map<string, Evidence>()
+  const valid = (): boolean => heldEpoch === epoch && heldRevision === evidenceRevision && current()
+  if (!valid()) return null
+  if (![...evidence].some(([id, step]) => !pending.has(id) && step.finishedAt <= now - AVG_WINDOW_MS)) return heldRevision
+  let boundary = -Infinity
+  await update($, snapshot, raw => {
+    removed.clear(); boundary = -Infinity
+    const state = normalize(raw)
+    // update retries CAS collisions internally. Throw to stop that loop as soon
+    // as this attempt expires or loses ownership, before issuing another write.
+    if (!valid() || !holdsLease(state)) throw new Error('stale evidence retirement')
+    const kept = new Map(evidence)
+    boundary = pruneEvidence(kept, pending, now, retainedLastIds(state), incoming)
+    for (const [id, step] of evidence) if (!kept.has(id)) removed.set(id, step)
+    return finite(boundary) ? { ...state, session: { ...state.session, ...(observationGeneration ? { observationGeneration } : {}),
+      evidenceRetiredThrough: Math.max(state.session.evidenceRetiredThrough ?? -Infinity, boundary) } } : state
+  })
+  if (!valid()) return null
+  const committed = await readState($)
+  if (!valid() || !holdsLease(committed)
+    || (committed.session.evidenceRetiredThrough ?? -Infinity) < boundary) return null
+  if (removed.size) {
+    for (const [id, step] of removed) if (evidence.get(id) === step && !pending.has(id)) evidence.delete(id)
+    evidenceRevision++
+  }
+  return evidenceRevision
+}
+/** Use the CAS callback's current host proofs, without restoring old Last into
+ * the bounded working index. Out-of-coverage proofs still compete for rows.
+ */
+function matchingEvidence(state: TokenSpeedSnapshot): Evidence[] {
+  const steps = new Map(evidence)
+  for (const r of state.rows) for (const bucket of r.models) {
+    for (const sample of [...(bucket.log ?? []), ...(bucket.last ? [bucket.last] : [])]) {
+      if (sample.step && sample.key && sample.counts && finite(sample.startedAt) && finite(sample.finishedAt) && !steps.has(sample.step)) {
+        steps.set(sample.step, { id: sample.step, key: sample.key, loopId: r.id, model: bucket.model,
+          startedAt: sample.startedAt, finishedAt: sample.finishedAt, counts: sample.counts })
+      }
+    }
+  }
+  return [...steps.values()]
+}
+const sameValue = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
 async function pollMagpie($: EngineInterface): Promise<void> {
   if (flight || !pending.size || !sessionId) return
+  const heldEpoch = epoch, heldSession = sessionId
   const now = await $.clock.now()
-  if (!finite(now) || flight || !pending.size || !sessionId) return
-  for (const [id, step] of evidence) if (step.finishedAt <= now - AVG_WINDOW_MS && !pending.has(id)) evidence.delete(id)
-  const due = [...pending].filter(([, value]) => value.due <= now)
-  if (!due.length) return
-  const heldEpoch = epoch, heldSession = sessionId, token = {}
+  if (!finite(now) || flight || !pending.size || sessionId !== heldSession || heldEpoch !== epoch) return
+  // One start-time group per flight. Backoff lets independent recent groups pass
+  // an over-budget long request; equal deadlines prefer the most recent group.
+  const ready = [...pending].filter(([id, value]) => value.due <= now && evidence.has(id))
+    .sort((a, b) => a[1].due - b[1].due || evidence.get(b[0])!.startedAt - evidence.get(a[0])!.startedAt)
+  const first = ready[0]
+  if (!first) return
+  const start = evidence.get(first[0])!.startedAt
+  const due = ready.filter(([id]) => Math.abs(evidence.get(id)!.startedAt - start) <= 5000)
+  const steps = new Map(due.map(([id]) => [id, evidence.get(id)!]))
+  const earliest = Math.min(...[...steps.values()].map(step => step.startedAt))
+  const group = new Set(due.map(([id]) => id))
+  const token = {}
+  let heldRevision = evidenceRevision
   const batch = `${observationGeneration}:${heldEpoch}:${++sequence}`
   flight = token
   let expired = false
   const timeout = $.clock.after(4000, () => { expired = true })
   const current = (): boolean => !expired && heldEpoch === epoch && sessionId === heldSession
-  // update's callback can be delayed, and state.set itself is not cancellable.
-  // Retain just the pre-transaction measurement fields for a targeted rollback.
-  const previous = new Map<string, TokenSpeedModelStats>()
+    && flight === token && heldRevision === evidenceRevision
+    && due.every(([id, value]) => pending.get(id) === value && evidence.get(id) === steps.get(id))
+  const changes = new Map<string, { before: TokenSpeedModelStats; after: TokenSpeedModelStats }>()
+  let settled = false, wrote = false
   try {
     for (const [, value] of due) { value.attempts++; value.due = now + Math.min(16000, 1000 * 2 ** value.attempts) }
     if (!holdsLease(await readState($)) || !current()) return
+    const retiredRevision = await retireEvidence($, heldEpoch, now, undefined, current)
+    if (retiredRevision === null) return
+    // Only retirement's own deletion may advance this flight's evidence version.
+    // Concurrent observations still invalidate it; they never refresh its budget.
+    heldRevision = retiredRevision
+    if (!current()) return
     const origin = await magpieOrigin($)
     if (!origin || !current()) return
-    // Every retained association participates, including certified/reloaded ones.
-    // A later query must cover old evidence to discover a late second candidate.
-    const steps = [...evidence.values()]
-    const earliest = Math.min(...steps.map(step => step.startedAt))
-    const rows = await queryRows($, origin, heldSession, earliest, now, current)
+    const queried = await queryRows($, origin, heldSession, earliest, now, current)
     if (!current()) return
-    const matches = uniqueMatches(steps, rows)
-    const valid = new Map([...matches].filter(([id, gateway]) => {
-      const step = evidence.get(id)!
-      return (!step.key || step.key === gateway.key) && gateway.measured !== null
-        && ![...activeRequests.values()].some(active => active.loopId === (gateway.subagent || 'main')
-          && active.model === gateway.model && active.startedAt <= gateway.startedAt)
-    }))
     const accepted = new Map<string, string>()
     await mutate($, heldEpoch, state => {
-      previous.clear(); accepted.clear() // CAS retries must describe the actual attempt.
+      changes.clear(); accepted.clear(); wrote = false
       if (!current()) return state
+      // Synchronous with this CAS snapshot; a collision recomputes all host proofs.
+      const steps = matchingEvidence(state), byId = new Map(steps.map(step => [step.id, step]))
+      const candidates = matchCandidates(steps, queried.rows)
+      const matches = uniqueMatches(steps, queried.rows, candidates)
+      const covered = new Set(steps.filter(step => step.startedAt >= queried.coveredFrom && step.finishedAt <= now).map(step => step.id))
+      const retiredThrough = state.session.evidenceRetiredThrough ?? -Infinity
+      const valid = new Map([...matches].filter(([id, gateway]) => {
+        const step = byId.get(id)!
+        return covered.has(id) && (!pending.has(id) || step.finishedAt > retiredThrough + SHARED_FINISH_MS)
+          && (!step.key || step.key === gateway.key) && gateway.measured !== null && gateway.finishedAt <= now
+          && ![...activeRequests.values()].some(active => active.loopId === (gateway.subagent || 'main')
+            && active.model === gateway.model && active.startedAt <= gateway.startedAt)
+      }))
+      const outcome = (id: string): TokenSpeedMeasurementStatus => {
+        if (valid.has(id)) return 'measured'
+        const set = candidates.get(id) ?? []
+        if (!set.length) return 'unavailable'
+        if (set.length > 1 || !matches.has(id)) return 'ambiguous'
+        return matches.get(id)?.measured === null ? 'unmeasurable' : 'unavailable'
+      }
+      const additions = new Map<string, TokenSpeedSample[]>()
+      for (const [id, gateway] of valid) {
+        const step = byId.get(id)!
+        if (!group.has(id) || !pending.has(id) || !gateway.measured) continue
+        const owner = JSON.stringify([step.loopId, step.model]), samples = additions.get(owner) ?? []
+        samples.push({ at: gateway.finishedAt, tokens: gateway.measured.tokens, ms: gateway.measured.ms,
+          key: gateway.key, step: id, startedAt: step.startedAt, finishedAt: step.finishedAt, counts: step.counts })
+        additions.set(owner, samples); accepted.set(id, gateway.key)
+      }
+      wrote = true
       return { ...state, rows: state.rows.map(r => ({ ...r, models: r.models.map(bucket => {
-        previous.set(JSON.stringify([r.id, bucket.model]), bucket)
-        let log = withinWindow(bucket.log ?? [], now).filter(sample => {
-          const step = sample.step && evidence.get(sample.step)
-          return step && sample.key === step.key && valid.get(step.id)?.key === sample.key
-        })
-        for (const [id, gateway] of valid) {
-          const step = evidence.get(id)!
-          if (!pending.has(id) || step.loopId !== r.id || step.model !== bucket.model || !gateway.measured) continue
-          if (!log.some(sample => sample.key === gateway.key)) log = [...log, { at: gateway.finishedAt,
-            tokens: gateway.measured.tokens, ms: gateway.measured.ms, key: gateway.key, step: id,
-            startedAt: step.startedAt, finishedAt: step.finishedAt, counts: step.counts }]
-          accepted.set(id, gateway.key)
+        const owner = JSON.stringify([r.id, bucket.model])
+        const trustworthy = (sample: TokenSpeedSample): boolean => {
+          if (!sample.step || !covered.has(sample.step)) return true
+          const step = byId.get(sample.step)
+          return !!step && sample.key === step.key && valid.get(step.id)?.key === sample.key
         }
-        const last = log.find(sample => sample.step === bucket.latestStep)
-        const removedLatest = (bucket.log ?? []).some(sample => sample.step === bucket.latestStep)
-          && !last
-        return { ...bucket, validationBatch: batch, log,
+        let log = withinWindow(bucket.log ?? [], now).filter(trustworthy)
+        for (const sample of additions.get(owner) ?? []) if (!log.some(held => held.key === sample.key)) log = [...log, sample]
+        const last = latestSample([...log, ...(bucket.last && trustworthy(bucket.last) ? [bucket.last] : [])], now)
+        const latestStatus = bucket.latestStep && covered.has(bucket.latestStep)
+          && (group.has(bucket.latestStep) || bucket.latestStatus === 'measured') ? outcome(bucket.latestStep) : bucket.latestStatus
+        const after = { ...bucket, log, last, latestStatus,
           outputTokens: log.reduce((n, s) => n + s.tokens, 0), durationMs: log.reduce((n, s) => n + s.ms, 0),
-          samples: log.length, lastApi: last ? last.tokens * 1000 / last.ms : removedLatest ? null : bucket.lastApi }
+          samples: log.length, lastApi: sampleRate(last) }
+        if (sameValue(after, bucket)) return bucket
+        after.validationBatch = batch
+        changes.set(owner, { before: bucket, after })
+        return after
       }) })) }
     })
     const committed = await readState($)
     if (!current()) {
-      // A state.set dispatched before the deadline may settle after it. No next
-      // validation batch can run until this flight (including rollback) finishes.
       await mutate($, heldEpoch, state => ({ ...state, rows: state.rows.map(r => ({ ...r,
         models: r.models.map(bucket => {
-          const old = previous.get(JSON.stringify([r.id, bucket.model]))
-          if (!old || bucket.validationBatch !== batch) return bucket
-          return { ...bucket, validationBatch: old.validationBatch, log: old.log,
-            outputTokens: old.outputTokens, durationMs: old.durationMs, samples: old.samples,
-            lastApi: bucket.latestStep === old.latestStep ? old.lastApi : bucket.lastApi }
+          const changed = changes.get(JSON.stringify([r.id, bucket.model]))
+          if (!changed || bucket.validationBatch !== batch) return bucket
+          const { before, after } = changed
+          const restored = { ...bucket, validationBatch: before.validationBatch }
+          // Later lifecycle writes may keep our batch tag. Restore only fields
+          // this batch changed and which still equal this batch's result.
+          for (const key of ['log', 'last', 'outputTokens', 'durationMs', 'samples', 'lastApi', 'latestStatus'] as const) {
+            if (key === 'latestStatus' && bucket.latestStep !== after.latestStep) continue
+            if (!sameValue(before[key], after[key]) && sameValue(bucket[key], after[key])) Object.assign(restored, { [key]: before[key] })
+          }
+          return restored
         }) })) }))
       return
     }
-    if (!holdsLease(committed)) return
+    if (!wrote || !holdsLease(committed)) return
+    settled = true
     for (const [id, key] of accepted) {
       const step = evidence.get(id)
       if (!step || !committed.rows.some(r => r.id === step.loopId && r.models.some(bucket =>
         bucket.model === step.model && bucket.validationBatch === batch
-        && bucket.log?.some(sample => sample.step === id && sample.key === key)))) continue
+        && (bucket.log?.some(sample => sample.step === id && sample.key === key)
+          || bucket.last?.step === id && bucket.last.key === key)))) continue
       step.key = key
-      pending.delete(id)
+      pending.delete(id); evidenceRevision++
     }
   } finally {
     timeout.cancel()
-    // Expiry rejects results, but must not exempt the held pending entries from the retry limit.
-    if (heldEpoch === epoch && sessionId === heldSession) for (const [id, value] of due) {
-      if (pending.get(id) === value && value.attempts >= 5) pending.delete(id)
-    }
-    if (flight === token) flight = null
+    try {
+      if (heldEpoch === epoch && sessionId === heldSession) {
+        for (const [id, value] of due) if (pending.get(id) === value && value.attempts >= 5) { pending.delete(id); evidenceRevision++ }
+        if (!settled) await mutate($, heldEpoch, state => ({ ...state, rows: state.rows.map(r => ({ ...r,
+          models: r.models.map(bucket => bucket.latestStep && group.has(bucket.latestStep)
+            && (bucket.latestStatus === 'pending' || bucket.latestStatus === 'unavailable')
+            ? { ...bucket, latestStatus: 'unavailable' } : bucket) })) }))
+      }
+    } finally { if (flight === token) flight = null }
   }
 }
 const rate = (value: number | null | undefined): string => value == null ? '—' : `${value.toFixed(1)} tok/s`
 function withinWindow(log: TokenSpeedSample[], now: number): TokenSpeedSample[] {
-  return log.filter(sample => sample.at > now - AVG_WINDOW_MS)
+  return log.filter(sample => sample.at > now - AVG_WINDOW_MS && sample.at <= now)
 }
-function windowedAverage(bucket: TokenSpeedModelStats, now: number): number | null {
-  if (bucket.metric !== MAGPIE_METRIC || bucket.log === undefined) return null
-  const held = withinWindow(bucket.log, now)
-  const tokens = held.reduce((sum, sample) => sum + sample.tokens, 0)
-  const ms = held.reduce((sum, sample) => sum + sample.ms, 0)
-  return ms > 0 ? tokens * 1000 / ms : null
+type ModelAverage = { tokens: number; ms: number; samples: number }
+function modelAverages(state: TokenSpeedSnapshot, now: number): Map<string, ModelAverage> {
+  const averages = new Map<string, ModelAverage>(), keys = new Set<string>(), steps = new Set<string>()
+  for (const r of state.rows) for (const bucket of r.models) {
+    if (bucket.metric !== MAGPIE_METRIC) continue
+    for (const sample of withinWindow(bucket.log ?? [], now)) {
+      const key = JSON.stringify([r.id, bucket.model, sample.key]), step = JSON.stringify([r.id, bucket.model, sample.step])
+      if (!sample.key || !sample.step || keys.has(key) || steps.has(step)) continue
+      keys.add(key); steps.add(step)
+      const sum = averages.get(bucket.model) ?? { tokens: 0, ms: 0, samples: 0 }
+      sum.tokens += sample.tokens; sum.ms += sample.ms; sum.samples++
+      averages.set(bucket.model, sum)
+    }
+  }
+  return averages
 }
+const averageRate = (sum: ModelAverage | undefined): number | null => sum && sum.ms > 0 ? sum.tokens * 1000 / sum.ms : null
+const lastRate = (bucket: TokenSpeedModelStats | undefined, now: number): number | null =>
+  bucket ? sampleRate(latestSample([...(bucket.log ?? []), ...(bucket.last ? [bucket.last] : [])], now)) : null
 async function safeNow($: EngineInterface): Promise<number> {
   try { return await $.clock.now() } catch { return Number.MAX_SAFE_INTEGER }
 }
@@ -581,20 +721,29 @@ export const register: Register = on => {
         })
       }
       registry = await loadRegistry(() => $.fs.read(`${$.plugin.root}/data/model-contexts.json`))
-      await $.command.register({ name: 'tok-speed', description: '各代理独立按请求模型统计；主控 first，reset 清空本会话统计', argumentHint: '[reset]' }).catch(() => {})
+      await $.command.register({ name: 'tok-speed', description: '各代理 Last；本会话同请求模型共享24h Avg；reset 清空统计', argumentHint: '[reset]' }).catch(() => {})
       await mutate($, heldEpoch, state => ({ version: 2, session: state.session, rows: state.rows.map(r => {
         revision = Math.max(revision, r.revision)
         return r.active && r.active.id !== activeRequests.get(r.id)?.id
-          ? { ...r, models: invalidateLast(r, r.active.model), active: null, status: 'aborted' } : r
+          ? { ...r, models: requestStatus(r, r.active.model, r.active.id, 'failed'), active: null, status: 'aborted' } : r
       }) }))
       const heldSession = await $.session.id()
       const restored = await readState($)
       if (heldEpoch !== epoch || !holdsLease(restored)) return
       sessionId = heldSession
-      for (const r of restored.rows) for (const bucket of r.models) for (const sample of bucket.log ?? []) {
-        if (sample.step && sample.key && sample.counts && finite(sample.startedAt) && finite(sample.finishedAt)) evidence.set(sample.step,
-          { id: sample.step, key: sample.key, loopId: r.id, model: bucket.model, startedAt: sample.startedAt, finishedAt: sample.finishedAt, counts: sample.counts })
+      const restoredAt = await $.clock.now()
+      if (heldEpoch !== epoch || !holdsLease(await readState($))) return
+      // Restore proofs before retirement, so its persisted boundary also covers
+      // expired log entries/Last which a later host write may supersede.
+      for (const r of restored.rows) for (const bucket of r.models) for (const sample of [...(bucket.log ?? []), ...(bucket.last ? [bucket.last] : [])]) {
+        if (sample.step && sample.key && sample.counts && finite(sample.startedAt) && finite(sample.finishedAt)
+          && !evidence.has(sample.step)) {
+          evidence.set(sample.step, { id: sample.step, key: sample.key, loopId: r.id, model: bucket.model,
+            startedAt: sample.startedAt, finishedAt: sample.finishedAt, counts: sample.counts })
+          evidenceRevision++
+        }
       }
+      await retireEvidence($, heldEpoch, restoredAt)
       ensureTimer($)
       await reconcile($, true)
       await observe(() => refreshMain($, heldEpoch))
@@ -652,7 +801,7 @@ export const register: Register = on => {
         const effort = requested ?? fallback
         return { ...r, running: true, currentModel: model, seen: true, turnId: e.turnId,
           context: loopId === 'main' || model === r.currentModel ? r.context : childContext(model),
-          revision: startedRevision, models: withBucket(r, { ...bucketFor(r, model), latestStep: requestId, lastApi: null }), active: null, status: 'waiting', effort,
+          revision: startedRevision, models: withBucket(r, { ...bucketFor(r, model), latestStep: requestId, latestStatus: 'waiting' }), active: null, status: 'waiting', effort,
           effortSource: requested !== null ? 'request' : effort !== null ? 'configured' : 'unknown' }
       }))
       const startedAt = await $.clock.now()
@@ -664,14 +813,15 @@ export const register: Register = on => {
       const request: ObservedRequest = { id: requestId, turnId: e.turnId,
         model, startedAt, loopId, epoch: heldEpoch, streaming: false, cancelled: false }
       active = request
-      activeRequests.set(loopId, request)
+      activeRequests.set(loopId, request); evidenceRevision++
       await mutate($, heldEpoch, state => changeRow(state, loopId, r => r.revision !== startedRevision ? r : { ...r,
-        models: withBucket(r, { ...bucketFor(r, model), latestStep: request.id, lastApi: null }),
+        models: withBucket(r, { ...bucketFor(r, model), latestStep: request.id, latestStatus: 'waiting' }),
         active: { id: request.id, turnId: e.turnId, model: request.model, startedAt } }))
       ensureTimer($)
     })
     if (!active) await observe(() => mutate($, heldEpoch, state => changeRow(state, loopId, r =>
-      r.revision !== startedRevision ? r : { ...r, models: invalidateLast(r, r.currentModel), status: 'usage unavailable' })))
+      r.revision !== startedRevision ? r : { ...r,
+        models: requestStatus(r, r.currentModel, requestId, 'unavailable'), status: 'usage unavailable' })))
     try {
       const stream = next(e)
       for await (const chunk of stream) {
@@ -680,7 +830,8 @@ export const register: Register = on => {
           const held = active as ObservedRequest
           held.streaming = true
           await observe(() => mutate($, held.epoch, state => changeRow(state, held.loopId,
-            r => r.active?.id === held.id && r.status === 'waiting' ? { ...r, status: 'streaming' } : r)))
+            r => r.active?.id === held.id && r.status === 'waiting' ? { ...r, status: 'streaming',
+              models: requestStatus(r, held.model, held.id, 'streaming') } : r)))
         }
         yield chunk
       }
@@ -699,7 +850,7 @@ export const register: Register = on => {
       throw error
     } finally {
       if (active) {
-        if (owns(active)) activeRequests.delete(loopId)
+        if (owns(active)) { activeRequests.delete(loopId); evidenceRevision++ }
         if (!completed) await observe(() => failed($, active!, failureStatus))
       }
     }
@@ -710,14 +861,14 @@ export const register: Register = on => {
     await observe(async () => {
       const id = e.agentId ?? 'main'
       const active = activeRequests.get(id)
-      if (active?.turnId === e.turnId) { active.cancelled = true; activeRequests.delete(id) }
+      if (active?.turnId === e.turnId) { active.cancelled = true; activeRequests.delete(id); evidenceRevision++ }
       const endedRevision = ++revision
       await mutate($, heldEpoch, state => {
         const held = state.rows.find(r => r.id === id)
         if (!held || (held.turnId !== e.turnId && !(id !== 'main' && held.turnId === null && held.running))) return state
         return changeRow(state, id, r => ({ ...r, running: false, active: null,
           turnId: e.turnId, revision: endedRevision,
-          models: r.active ? invalidateLast(r, r.active.model) : r.models,
+          models: r.active ? requestStatus(r, r.active.model, r.active.id, 'failed') : r.models,
           status: e.reason === 'error' ? 'error' : e.reason === 'aborted' ? 'aborted' : 'idle' }))
       })
     })
@@ -766,23 +917,25 @@ export const register: Register = on => {
       const reading = lookupWindow(registry, r.currentModel)
       return reading.sourceURL ? [`${role(r, state.rows)} · context source ${reading.sourceURL} · checked ${reading.date}`] : []
     })
+    const averages = modelAverages(state, now)
     const lines = state.rows.flatMap(r => [
       `${role(r, state.rows)} · ${r.description || (r.id === 'main' ? '主控' : '代理')} · ${r.running ? 'running' : 'ended'} · ${r.currentModel ?? 'unknown'} · effort ${r.effort ?? '—'} (${r.effortSource}) · Ctx ${contextLabel(r.context)} (${r.context.source}) · ${r.status}`,
-      ...r.models.map(bucket => {
-        const held = withinWindow(bucket.log ?? [], now)
-        return `${role(r, state.rows)} · ${bucket.model} · Last ${rate(bucket.lastApi)} · Avg ${rate(windowedAverage(bucket, now))} · 24h ${held.length} 个请求 · ${held.reduce((n, s) => n + s.tokens, 0)} tokens / ${(held.reduce((n, s) => n + s.ms, 0) / 1000).toFixed(3)}s`
+      ...(r.currentModel !== null && !r.models.some(bucket => bucket.model === r.currentModel)
+        ? [bucketFor(r, r.currentModel), ...r.models] : r.models).map(bucket => {
+        const sum = averages.get(bucket.model)
+        return `${role(r, state.rows)} · ${bucket.model} · Last ${rate(lastRate(bucket, now))} · Avg ${rate(averageRate(sum))} · 24h ${sum?.samples ?? 0} 个请求 · ${sum?.tokens ?? 0} tokens / ${((sum?.ms ?? 0) / 1000).toFixed(3)}s · latest ${bucket.latestStatus ?? 'unavailable'}${bucket.last?.step && bucket.last.step !== bucket.latestStep ? ' · Last 来自此前可测速请求' : ''}`
       }),
     ])
     return { text: [
-      'token-speed 0.5.0 · Magpie measured · 本 session、本插件实际观察到的请求 · 各代理独立统计',
-      'Last：本代理、本请求模型最近一次 step 唯一匹配的 Magpie 单条 measured Speed；等待落账、失败、缺失或歧义为 —。Avg：本 session 该代理该请求模型最近 24h 成功匹配样本的测速输出 token 总和 / 测速窗口总时长，按 Magpie 请求完成时间判窗，不取速度算术平均，不跨 session。',
+      'token-speed 0.6.0 · Magpie measured · 本 session、本插件实际观察到的请求 · 各代理 Last、同完整模型共享 Avg',
+      'Last：本代理、本完整请求模型最近完成且仍有效的可测速样本；等待、流中、失败或不可测速不清旧值。latest 单独显示最新请求 waiting/streaming/pending/measured/failed/unmeasurable/ambiguous/unavailable，Last 可来自此前请求。Avg：本 session 所有代理（含已结束）同完整请求模型最近 24h 的测速输出 token 总和 / 测速窗口总时长，严格按 Magpie 完成时间判窗，不取速度算术平均，不跨 session。',
       '依赖本地 Magpie 与 curl；优先 ANTHROPIC_BASE_URL 环境，其次 settings.env，只访问明确 loopback。无 shell GET 禁用 curlrc、代理和重定向，仅接受完整 HTTP 200 JSON；失败或缺少 curl 保持未知。只采纳本机普通 Claude 来源，排除用途、同步和远程转发标记；冲突候选仍参与歧义。session、agent、完整请求模型、step 时间窗口及 CLI input+cache_write/output/cache_read 三元组必须双向唯一；usage 缺失/0、deferred/retry 计数不一致为 —。computer=this 不能识别所有 LAN 直连；session id 非完整请求 id。q 不检索 native_session，自定义 X-Magpie-Session 覆盖时查不到则 —。',
       '口径与 Magpie measured Speed 一致：排除 TTFT，已知 reasoning 时使用正文及 first_text，只有有证据的可见 reasoning 才计全输出；hidden 无正文、短窗、burst、失败/取消/截断不计。只复现 Magpie 测量，不保证底层供应商真实推理 token 绝对准确；不使用本地字符估算或旧全程历史。',
       'UI 保留 Last 与 Avg（窄屏 L=Last、A=Avg）；单位 tok/s。主控第一，活跃子代理各一行，工作区最后。effort 来源依次 request、applied、configured；主控 configured 优先 CLAUDE_CODE_EFFORT_LEVEL，其次模型/全局 settings 和明确后缀。Ctx 主控以 session.usage 为准；子代理最近 CLI uncached+cache读写输入，窗口 source 优先实际窗口、明确 override、官方 default/capacity、未知；官方 max 仅元数据。固定 10 格块状条，每格8档、80视觉档，相邻整数百分点可同形，数字保留1%精度。',
       `context registry v${registry.version}${registry.fallback ? ' (load failed: confirmed overrides only)' : ''}`,
       ...provenance, ...lines,
       ...(state.rows.some(r => r.models.length) ? [] : ['Last — · Avg — · 尚无本会话统计']),
-      'reload 保留已认证 Magpie 样本和代理/context/effort 元数据，旧 active 终止；reset active 时拒绝，成功清 samples/pending，/clear 清会话。不跨 session 持久化，turn.complete 不重复累计。每次稳定查询复验原 key 的双向唯一性，歧义或缺失撤销；无 pending 时停止查询，迟到候选到后续查询才会发现。分页不完整或变化、超过2000行、超时均拒绝本批；最多5次节流重试，最多4096条证据，过期后回收恢复。每批4秒，curl/进程有限超时；已发出的宿主状态写入不可取消，跨截止落地后按批次撤销，撤销前可能短暂可读；若恰逢模块重载且旧 lease 失效，该已验证批次可能由新模块保留。',
+      'reload 保留已认证 Magpie 样本及 Last 证据，旧 active 终止；reset active 时拒绝，成功清 samples/pending，/clear 清会话。按待匹配起点分组，单飞、最多5次节流重试、每遍最多8页每页500行、每批4秒；优先到期组，同期优先近期组。双扫校验已读完整前缀，覆盖范围内才复验旧样本，撤销 Last 时回退保留的更早有效样本或未知；范围外不撤销，无 pending 不查询。相对 period 依赖 loopback Magpie 与 CLI 同机墙钟，60秒余量涵盖4秒批次及普通时钟误差；无法核验超过余量的时钟偏差。工作索引最多4096条，保留pending/24h证据及仍可能冲突的过期非Last；完整Last留host参与CAS匹配，过期脱离工作容量。回收先保存单调时间水位；回拨至水位后4秒以内拒绝新认证。查询及CAS检查证据版本，变化放弃本批。宿主已发出的状态写入不可取消，跨截止或版本变化落地后按批次/字段撤销，保留后来请求状态；撤销前可能短暂可读。若恰逢模块重载且旧lease失效，迟到提交可能由新模块保留。',
     ].join('\n') }
   })
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -801,9 +954,10 @@ export const register: Register = on => {
     const efforts = visible.map(r => r.effort === null ? '—' : String(r.effort))
     const contexts = visible.map(r => contextLabel(r.context))
     const buckets = visible.map(r => r.models.find(item => item.model === r.currentModel && !item.legacy))
-    const averages = buckets.map(bucket => bucket ? windowedAverage(bucket, now) : null)
+    const sums = modelAverages(state, now)
+    const averages = visible.map(r => r.currentModel === null ? null : averageRate(sums.get(r.currentModel)))
     const number = (n: number | null | undefined): string => n == null ? '—' : n.toFixed(1)
-    const lasts = buckets.map(bucket => number(bucket?.lastApi))
+    const lasts = buckets.map(bucket => number(lastRate(bucket, now)))
     const avgs = averages.map(number)
     const maxWidth = (values: string[], minimum = 0): number => Math.max(minimum, ...values.map(cellWidth))
     const multi = visible.length > 1

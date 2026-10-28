@@ -123,25 +123,56 @@ export function corresponds(step: Evidence, row: GatewayRow): boolean {
     && c.input + c.write === step.counts.input + step.counts.write
     && c.output === step.counts.output && c.read === step.counts.read
 }
-export function uniqueMatches(steps: Evidence[], rows: GatewayRow[]): Map<string, GatewayRow> {
-  const candidates = steps.map(step => rows.filter(row => corresponds(step, row)))
+function associationKey(loopId: string, model: string, counts: Counts): string {
+  return JSON.stringify([loopId, model, counts.input + counts.write, counts.output, counts.read])
+}
+/** Candidate indexing changes cost, not eligibility or either direction of uniqueness. */
+export function matchCandidates(steps: Evidence[], rows: GatewayRow[]): Map<string, GatewayRow[]> {
+  const indexed = new Map<string, GatewayRow[]>()
+  for (const row of rows) {
+    if (!row.counts) continue
+    const key = associationKey(row.subagent || 'main', row.model, row.counts)
+    const group = indexed.get(key)
+    if (group) group.push(row)
+    else indexed.set(key, [row])
+  }
+  return new Map(steps.map(step => [step.id,
+    (indexed.get(associationKey(step.loopId, step.model, step.counts)) ?? []).filter(row => corresponds(step, row))]))
+}
+export function uniqueMatches(steps: Evidence[], rows: GatewayRow[], candidates = matchCandidates(steps, rows)): Map<string, GatewayRow> {
   const uses = new Map<string, number>()
-  for (const set of candidates) for (const row of set) uses.set(row.key, (uses.get(row.key) ?? 0) + 1)
+  for (const set of candidates.values()) for (const row of set) uses.set(row.key, (uses.get(row.key) ?? 0) + 1)
   const result = new Map<string, GatewayRow>()
-  for (let i = 0; i < steps.length; i++) {
-    const row = candidates[i]![0]
+  for (const step of steps) {
+    const set = candidates.get(step.id) ?? [], row = set[0]
     // Ineligible rows still make a candidate set ambiguous; they just never certify.
-    if (candidates[i]!.length === 1 && row && row.eligible && uses.get(row.key) === 1) result.set(steps[i]!.id, row)
+    if (set.length === 1 && row && row.eligible && uses.get(row.key) === 1) result.set(step.id, row)
   }
   return result
 }
 
-/** Finished, non-pending evidence older than the averaging window is dead weight. */
+/** Two step finishes sharing one gateway row can differ by at most 2 * 2000ms. */
+export const SHARED_FINISH_MS = 4000
+/** Last lives in host state, not in this bounded working index. Keep other old
+ * evidence while a pending/new completion could still share its gateway row.
+ * Return a retirement watermark so a later clock rollback cannot invent uniqueness.
+ */
+export function pruneEvidence(evidence: Map<string, Evidence>,
+  pending: Map<string, { attempts: number; due: number }>, now: number,
+  retained = new Set<string>(), incoming?: Evidence): number {
+  const finishes = [...pending.keys()].flatMap(id => evidence.has(id) ? [evidence.get(id)!.finishedAt] : [])
+  if (incoming) finishes.push(incoming.finishedAt)
+  let retiredThrough = -Infinity
+  for (const [id, held] of evidence) {
+    if (pending.has(id) || held.finishedAt > now - AVG_WINDOW_MS) continue
+    if (!retained.has(id) && finishes.some(finish => Math.abs(finish - held.finishedAt) <= SHARED_FINISH_MS)) continue
+    evidence.delete(id)
+    retiredThrough = Math.max(retiredThrough, held.finishedAt)
+  }
+  return retiredThrough
+}
 export function rememberEvidence(evidence: Map<string, Evidence>,
   pending: Map<string, { attempts: number; due: number }>, step: Evidence, now: number): boolean {
-  for (const [id, held] of evidence) {
-    if (!pending.has(id) && held.finishedAt <= now - AVG_WINDOW_MS) evidence.delete(id)
-  }
   if (evidence.size >= MAX_EVIDENCE) return false
   evidence.set(step.id, step)
   pending.set(step.id, { attempts: 0, due: now + 750 })
@@ -149,7 +180,7 @@ export function rememberEvidence(evidence: Map<string, Evidence>,
 }
 
 const PAGE_SIZE = 500
-const MAX_ROWS = 2000
+const MAX_PAGES = 8
 const CURL_CONNECT_TIMEOUT = '1'
 const CURL_MAX_TIME = '2'
 const CURL_RUN_TIMEOUT_MS = 2500
@@ -172,24 +203,30 @@ async function fetchPage($: EngineInterface, url: string): Promise<unknown> {
   if (!/^[0-9]{3}$/.test(status) || status !== '200') throw new Error('usage unavailable')
   try { return JSON.parse(response.stdout.slice(0, at)) } catch { throw new Error('usage unavailable') }
 }
-/** One session index and a window reaching before the oldest evidence to recheck.
- * Read the full bounded set twice: changes, duplicate rows and unstable boundaries
- * discard the whole batch. Never report an average from truncated pagination.
+/** A stable complete prefix proves coverage only at/after coveredFrom.
+ * Older evidence still participates in matching, but absence outside this range
+ * says nothing about its certification. A strict earlier boundary includes all ties.
  */
-export async function queryRows($: EngineInterface, origin: string, session: string, earliest: number, now: number, current: () => boolean = () => true): Promise<GatewayRow[]> {
+export type QueryRows = { rows: GatewayRow[]; coveredFrom: number }
+export async function queryRows($: EngineInterface, origin: string, session: string, earliest: number, now: number,
+  current: () => boolean = () => true): Promise<QueryRows> {
   const endpoint = localOrigin(origin)
-  if (endpoint === null) throw new Error('usage unavailable')
-  const minutes = Math.max(15, Math.ceil((now - earliest + 60_000) / 60_000))
-  const base = `${endpoint}/v1/magpie/usage/requests?period=${encodeURIComponent(`last:${minutes}m`)}&q=${encodeURIComponent(session)}&via=through&computer=this&limit=${PAGE_SIZE}`
-  const scan = async (): Promise<{ rows: GatewayRow[]; signature: string }> => {
+  if (endpoint === null || !finite(earliest) || !finite(now) || earliest > now) throw new Error('usage unavailable')
+  // Relative periods move between calls. A minute of margin covers the four-second
+  // batch budget and ordinary local clock skew; the returned timestamp boundary is
+  // also required, so a moving lower bound never silently proves an incomplete set.
+  const seconds = Math.max(60, Math.ceil((now - earliest + 60_000) / 1000))
+  const base = `${endpoint}/v1/magpie/usage/requests?period=${encodeURIComponent(`last:${seconds}s`)}&q=${encodeURIComponent(session)}&via=through&computer=this&limit=${PAGE_SIZE}`
+  const scan = async (): Promise<{ rows: GatewayRow[]; signature: string; coveredFrom: number }> => {
     let total: number | null = null
     const rows: GatewayRow[] = [], keys = new Set<string>()
     let previous = Infinity
-    for (let offset = 0; ; offset += PAGE_SIZE) {
+    for (let index = 0; index < MAX_PAGES; index++) {
+      const offset = index * PAGE_SIZE
       if (!current()) throw new Error('expired query')
       const page: unknown = await fetchPage($, `${base}&offset=${offset}`)
       if (!current()) throw new Error('expired query')
-      if (!object(page) || !Array.isArray(page.rows) || !count(page.total) || page.total > MAX_ROWS
+      if (!object(page) || !Array.isArray(page.rows) || !count(page.total)
         || page.offset !== offset || (total !== null && total !== page.total)) throw new Error('unstable page')
       total = page.total
       if (page.rows.length !== Math.min(PAGE_SIZE, Math.max(0, total - offset))) throw new Error('incomplete page')
@@ -198,11 +235,15 @@ export async function queryRows($: EngineInterface, origin: string, session: str
         if (!row || keys.has(row.key) || row.startedAt > previous) throw new Error('unstable rows')
         previous = row.startedAt; keys.add(row.key); rows.push(row)
       }
-      if (rows.length === total) break
+      // Finish the whole page before accepting an earlier boundary. All rows at
+      // earliest must precede it in the verified descending sequence.
+      if (previous < earliest || rows.length === total) return { rows,
+        coveredFrom: rows.length === total ? now - seconds * 1000 + 4000 : previous + 1,
+        signature: JSON.stringify([total, rows]) }
     }
-    return { rows, signature: JSON.stringify(rows) }
+    throw new Error('query budget exceeded')
   }
   const first = await scan(), second = await scan()
   if (first.signature !== second.signature) throw new Error('usage changed')
-  return second.rows.filter(row => row.session === session)
+  return { rows: second.rows.filter(row => row.session === session), coveredFrom: second.coveredFrom }
 }

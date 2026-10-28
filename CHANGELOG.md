@@ -6,6 +6,11 @@
 
 - 个人预设新增 Terra worker 示例 `gpt-6.1-terra`（`examples/magpie/agents/gpt-6.1-terra.md`，路由 `codex/gpt-6.1-terra:max`，effort `max`）：主控已定方案下的常规实现、已知根因修复、测试、保持行为重构与取证；根因、架构与高风险实施决策及最终验收仍在主控与 Sol。worker 角色卡中排 priority 5，排在既有候选之后。preset 示例数由 8 增至 9，`install.sh`、安装入口合同测试、Magpie 示例与安装参考同步；不改变根 `VERSION`。
 
+## Mod 发布：token-speed 0.6.0 - 2026-10-28
+
+- Last 保留各代理同完整请求模型最近仍有效的认证测速样本；Avg 汇总本会话所有代理（含已结束）同完整请求模型最近 24 小时的有效测速请求。查询按相近请求分组并复核完整前缀，改进证据回收与有限重试。
+- 升级可复用 0.5.0 已保存、带完整证据的认证样本，不补录没有观察证据的旧请求。详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.6.0` 说明），不改变编排仓库版本。
+
 ## Mod 发布：token-speed 0.5.0 - 2026-10-28
 
 - 输出速率改为本机 Magpie measured Speed 的 Last 与最近 24 小时 Avg，依赖本机 Magpie 和 `curl`；仅统计本会话中插件实际观察并成功匹配的请求，按代理和完整请求模型分别计算。
