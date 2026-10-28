@@ -3,10 +3,16 @@ export type TokenSpeedStatus = 'idle' | 'waiting' | 'streaming' | 'aborted' | 'e
 export type TokenSpeedEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | number
 
 export type TokenSpeedSample = {
-  /** $.clock.now() epoch ms when the request finished. */
+  /** Magpie request completion epoch ms. */
   at: number
   tokens: number
   ms: number
+  /** Minimal local association proof, retained across plugin reload only. */
+  key?: string
+  step?: string
+  startedAt?: number
+  finishedAt?: number
+  counts?: { input: number; write: number; output: number; read: number }
 }
 
 export type TokenSpeedModelStats = {
@@ -15,12 +21,14 @@ export type TokenSpeedModelStats = {
   durationMs: number
   samples: number
   lastApi: number | null
-  /** v0.1 used response models, so its averages remain separately identified. */
+  /** Only this tagged metric may feed current Last/Avg. Untagged history is legacy. */
+  metric?: 'magpie-measured-v1'
+  latestStep?: string
+  /** Last validation transaction, used only to roll back a late host commit. */
+  validationBatch?: string
   legacy?: true
-  /**
-   * v0.3+ per-request log backing the rolling 24h Avg. Absent on v0.1 legacy
-   * buckets and on v0.2 state migrated before its first new request.
-   */
+  legacyKind?: 'response-model' | 'full-request'
+  /** Per-request completion log backing the rolling 24h Avg; required for the new metric. */
   log?: TokenSpeedSample[]
 }
 
@@ -39,7 +47,6 @@ export type TokenSpeedRow = {
   currentModel: string | null
   models: TokenSpeedModelStats[]
   active: TokenSpeedActive | null
-  live: number | null
   status: TokenSpeedStatus
   seen: boolean
   turnId: string | null
@@ -64,6 +71,10 @@ export type TokenSpeedContextInfo = {
 export type TokenSpeedWorkspace = { name: string; branch: string | null }
 
 export type TokenSpeedSessionInfo = {
+  /** Session-state lease rejects asynchronous writes from a replaced module. */
+  observationGeneration?: string
+  /** Last observed host configuration; distinct from the latest actual request. */
+  configuredModel?: string
   context: TokenSpeedContextInfo
   workspace: TokenSpeedWorkspace | null
 }
@@ -75,7 +86,7 @@ export type TokenSpeedSnapshot = {
 }
 
 /** Read only compatibility shape; all writes use version 2. */
-export type TokenSpeedLegacySnapshot = Pick<TokenSpeedRow, 'models' | 'currentModel' | 'active' | 'live' | 'status' | 'seen'>
+export type TokenSpeedLegacySnapshot = Pick<TokenSpeedRow, 'models' | 'currentModel' | 'active' | 'status' | 'seen'>
 
 declare module 'claude-code' {
   interface PluginState {

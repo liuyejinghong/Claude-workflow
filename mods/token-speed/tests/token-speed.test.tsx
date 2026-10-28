@@ -1,3 +1,4 @@
+import { uniform } from './magpie-fixture'
 import { test, expect, mock } from 'claude-code/testing'
 import type { Engine, MockClock, Plugin } from 'claude-code/testing'
 import type { HookStream, On, TurnStepChunk, TurnStepInput, TurnStepResult, TurnUsage, RenderPropsOf, AgentInfo, AgentSpawnInput } from 'claude-code'
@@ -52,6 +53,8 @@ async function command($: Engine, args = '', name = 'tok-speed') {
 }
 function setup(on: On, roster: () => Promise<AgentInfo[]> = async () => []): MockClock {
   const clock = mock.clock(on)
+  mock.env(on, {})
+  on('session.id', async () => ({ value: 'session' }))
   on('fs.read', async () => ({ value: JSON.stringify({ version: 1, models: [], overrides: [
     { id: 'gpt-6.1-sol', aliases: [], window: 272000, reason: 'Test override' },
     { id: 'glm-5.3', aliases: [], window: 1000000, reason: 'Test override' },
@@ -74,7 +77,7 @@ async function finishAt(clock: MockClock, pending: ReturnType<typeof consume>, m
   return pending
 }
 
-test('main hook passes every chunk/ref, original request and final result with one downstream request; live updates before end', OPTIONS, async ($, on) => {
+test('main hook passes every chunk/ref, original request and final result with one downstream request; status updates before end', OPTIONS, async ($, on) => {
   const clock = setup(on)
   let calls = 0
   let received: TurnStepInput | undefined
@@ -88,86 +91,34 @@ test('main hook passes every chunk/ref, original request and final result with o
   on('turn.step', async function* (_$, e) {
     calls++; received = e
     for (const chunk of chunks) yield chunk
-    await clock.sleep(2000)
+    await clock.sleep(1000)
+    yield { kind: 'text', index: 0, text: 'abcdefgh' }
+    await clock.sleep(1000)
     return result(e)
   })
   await $.session.start(START)
   const e = request()
   const pending = consume($.turn.step(e))
   await clock.settle()
-  expect((await state($)).status).toBe('waiting')
-  expect((await state($)).live).toBeNull()
+  expect((await state($)).status).toBe('streaming')
   await clock.advance(250)
   expect((await state($)).status).toBe('streaming')
   // 3 text + 2 thinking + 1.75 JSON; tool/engine/stop contribute nothing.
-  expect((await state($)).live).toBe(27)
-  expect((await state($)).models.length).toBe(0)
+  expect((await state($)).models[0]?.lastApi).toBeNull()
   await clock.advance(1750)
   const observed = await pending
   expect(calls).toBe(1)
   expect(received).toEqual(e)
-  expect(observed.chunks).toEqual(chunks)
+  expect(observed.chunks).toEqual([...chunks, { kind: 'text', index: 0, text: 'abcdefgh' }])
   expect(observed.result).toEqual(result(e))
-  expect((await state($)).models[0]?.lastApi).toBe(50)
-  expect((await state($)).live).toBeNull()
+  expect((await state($)).models[0]?.lastApi).toBeNull()
 })
 
-test('waiting, 3 second decay and mixed Unicode code point weights; 250ms snapshots avoid per-chunk state writes', OPTIONS, async ($, on) => {
-  const clock = setup(on)
-  let writes = 0
-  on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => { writes++; return next(e) })
-  on('turn.step', async function* (_$, e) {
-    yield { kind: 'tool', index: 0, name: 'Read', id: 'waiting' }
-    await clock.sleep(500)
-    // Supplementary CJK is 1, emoji one code point is .25, not .5.
-    for (let i = 0; i < 20; i++) yield { kind: 'text', index: 0, text: '中𠀀🙂a' }
-    await clock.sleep(3750)
-    return result(e)
-  })
-  await $.session.start(START)
-  const pending = consume($.turn.step(request()))
-  await clock.settle()
-  await clock.advance(250)
-  expect((await state($)).status).toBe('waiting')
-  expect((await state($)).live).toBe(0)
-  const before = writes
-  await clock.advance(500)
-  expect((await state($)).status).toBe('streaming')
-  expect((await state($)).live).toBe(50 / .75)
-  expect(writes - before).toBeLessThanOrEqual(2)
-  await clock.advance(3000)
-  expect((await state($)).live).toBe(0)
-  expect((await state($)).active).not.toBeNull()
-  await clock.advance(500)
-  await pending
-})
-
-test('API average weights request durations, excludes tool gaps, ignores turn totals and switches request models', OPTIONS, async ($, on) => {
-  const clock = setup(on)
-  on('turn.step', async function* (_$, e) {
-    await clock.sleep(e.index === 0 ? 2000 : 3000)
-    return result(e, e.index === 0 ? 100 : 300, 'unrelated-response')
-  })
-  await $.session.start(START)
-  await finishAt(clock, consume($.turn.step(request('request-a', 0))), 2000)
-  await clock.advance(20_000)
-  await finishAt(clock, consume($.turn.step(request('request-a', 1))), 3000)
-  const bucket = (await state($)).models.find(item => item.model === 'request-a')
-  expect(bucket).toMatchObject({ model: 'request-a', outputTokens: 400, durationMs: 5000, samples: 2, lastApi: 100 })
-  expect(bucket?.log?.length).toBe(2)
-  expect((await command($)).text).toMatch('Avg 80.0 tok/s')
-  await $.turn.complete({ answer: 'whole turn', durationMs: 25_000, isAborted: false, turnId: 'turn', reason: 'answer', usage: usage(400) })
-  expect((await state($)).models.find(item => item.model === 'request-a')).toEqual(bucket)
-  await finishAt(clock, consume($.turn.step(request('request-b', 2))), 3000)
-  expect((await state($)).currentModel).toBe('request-b')
-  expect((await state($)).models.length).toBe(2)
-})
-
-test('CPA unavailable/invalid usage never becomes zero; valid zero counts and zero duration cannot produce Infinity', OPTIONS, async ($, on) => {
+test('missing/invalid/zero usage never becomes a sample and zero duration cannot produce Infinity', OPTIONS, async ($, on) => {
   const clock = setup(on)
   const counts = [100, null, NaN, -1, Infinity, 0, 100] as const
   on('turn.step', async function* (_$, e) {
-    if (e.index !== 6) await clock.sleep(1000)
+    if (e.index !== 6) yield* uniform(clock, 1000)
     // Missing output_tokens/model simulates a gateway outside the typed API contract.
     const r = result(e, counts[e.index] ?? null, 'actual')
     if (e.index === 1) r.usage = { input_tokens: 0 } as TurnUsage
@@ -177,17 +128,17 @@ test('CPA unavailable/invalid usage never becomes zero; valid zero counts and ze
   for (let index = 0; index < counts.length; index++) {
     await finishAt(clock, consume($.turn.step(request('fallback', index))), index === 6 ? 0 : 1000)
     const held = await state($)
-    if (index >= 1 && index <= 4) {
+    if (index >= 1 && index <= 5) {
       expect(held.status).toBe('usage unavailable')
-      expect(held.models.find(bucket => bucket.model === 'fallback')?.samples).toBe(1)
+      expect(held.models.find(bucket => bucket.model === 'fallback')?.samples).toBe(0)
       expect(held.models.find(bucket => bucket.model === held.currentModel)?.lastApi).toBeNull()
     }
     if (index === 1) expect(held.currentModel).toBe('fallback')
   }
   const bucket = (await state($)).models.find(item => item.model === 'fallback')
-  expect(bucket).toMatchObject({ model: 'fallback', outputTokens: 100, durationMs: 2000, samples: 2, lastApi: null })
-  expect(bucket?.log?.map(sample => sample.tokens)).toEqual([100, 0])
-  expect((await command($)).text).toMatch('Avg 50.0 tok/s')
+  expect(bucket).toMatchObject({ model: 'fallback', outputTokens: 0, durationMs: 0, samples: 0, lastApi: null })
+  expect(bucket?.log?.map(sample => sample.tokens)).toEqual([])
+  expect((await command($)).text).toMatch('Avg —')
   expect((await command($)).text).not.toMatch('Infinity')
 })
 
@@ -200,7 +151,6 @@ test('subagent completion touches its own row only and the same id may start ano
   const e = { ...request('glm-5.3[1m]'), agentId: 'child' }
   const observed = await finishAt(clock, consume($.turn.step(e)), 1000)
   expect((await state($, 'child')).running).toBe(true)
-  expect((await state($, 'child')).live).toBeNull()
   await $.turn.complete({ answer: '', durationMs: 1000, isAborted: true, turnId: 'turn', agentId: 'child', reason: 'aborted' })
   expect(calls).toBe(1)
   expect(observed.result).toEqual(result(e, 900))
@@ -213,7 +163,7 @@ test('subagent completion touches its own row only and the same id may start ano
   await pending
 })
 
-test('downstream error is propagated and cleans active/live without adding a sample', OPTIONS, async ($, on) => {
+test('downstream error is propagated and cleans active without adding a sample', OPTIONS, async ($, on) => {
   const clock = setup(on)
   let calls = 0
   on('turn.step', async function* () {
@@ -231,12 +181,11 @@ test('downstream error is propagated and cleans active/live without adding a sam
   expect(calls).toBe(1)
   const held = await state($)
   expect(held.active).toBeNull()
-  expect(held.live).toBeNull()
   expect(held.status).toBe('error')
   expect(held.models.reduce((sum, bucket) => sum + bucket.samples, 0)).toBe(0)
 })
 
-test('closing an unfinished stream clears live and records aborted without a precise sample', OPTIONS, async ($, on) => {
+test('closing an unfinished stream clears active and records aborted without a precise sample', OPTIONS, async ($, on) => {
   setup(on)
   let calls = 0
   on('turn.step', async function* (_$, e) {
@@ -254,7 +203,6 @@ test('closing an unfinished stream clears live and records aborted without a pre
   expect(calls).toBe(1)
   const held = await state($)
   expect(held.active).toBeNull()
-  expect(held.live).toBeNull()
   expect(held.status).toBe('aborted')
   expect(held.models.reduce((sum, bucket) => sum + bucket.samples, 0)).toBe(0)
 })
@@ -265,7 +213,12 @@ test('UI preserves downstream drawing, hides during survey/no rows, commands han
   let writes = 0
   on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => { writes++; return next(e) })
   on('command.run', { command: 'unrelated' }, async () => ({ text: 'other command' }))
-  on('turn.step', async function* (_$, e) { calls++; await clock.sleep(1000); return result(e) })
+  on('turn.step', async function* (_$, e) {
+    calls++
+    if (e.index === 0) yield* uniform(clock, 1000)
+    else { await clock.sleep(1000) }
+    return result(e)
+  })
   await $.session.start(START)
   await $.session.start(START)
   expect((await command($)).text).toMatch('尚无本会话统计')
@@ -276,14 +229,14 @@ test('UI preserves downstream drawing, hides during survey/no rows, commands han
   const before = writes
   await clock.advance(500)
   // One snapshot per 250ms: repeated session.start does not duplicate timers.
-  expect(writes - before).toBe(2)
+  expect(writes - before).toBeLessThanOrEqual(1)
   await clock.advance(500)
   await pending
   expect(calls).toBe(1)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'token-speed', surface, component: 'AbovePrompt', props: BAND })
     const line = await ui.find({ type: 'Text', text: / · Last / })
-    expect(line?.text).toMatch('Last 100.0')
+    expect(line?.text).toMatch(/Last\s+—/)
     expect(line?.text?.match(/tok\/s/g)?.length).toBe(1)
     expect(line?.props.wrap).toBe('truncate-end')
     expect((await ui.find({ type: 'Text', text: 'underlying band' }))?.text).toBe('underlying band')
@@ -291,9 +244,8 @@ test('UI preserves downstream drawing, hides during survey/no rows, commands han
     const narrow = await $.ui.mount({ plugin: 'token-speed', surface, component: 'AbovePrompt', props: { ...BAND, bodyColumns: 80 } })
     const shortLine = await narrow.find({ type: 'Text', text: / · Avg / })
     expect(shortLine?.text).toMatch('main · requested · — · Ctx')
-    expect(shortLine?.text).toMatch(/Live\s+—/)
-    expect(shortLine?.text).toMatch('Avg 100.0 tok/s')
-    expect(shortLine?.text).not.toMatch('Last ')
+    expect(shortLine?.text).toMatch(/Avg\s+—/)
+    expect(shortLine?.text).toMatch('Last ')
     await narrow.unmount()
     for (const props of [{ ...BAND, hasSurvey: true }, { ...BAND, maxRows: 0 }]) {
       const hidden = await $.ui.mount({ plugin: 'token-speed', surface, component: 'AbovePrompt', props })
@@ -317,12 +269,11 @@ test('UI preserves downstream drawing, hides during survey/no rows, commands han
   const pending3 = consume($.turn.step(request('after-clear', 2)))
   await clock.settle()
   await clock.advance(250)
-  expect((await state($)).live).toBe(0)
   await clock.advance(750)
   await pending3
 })
 
-test('session.start discards stale reload active but retains host model statistics', OPTIONS, async ($, on) => {
+test('session.start discards stale reload active but preserves metadata and discards old speed metrics', OPTIONS, async ($, on) => {
   setup(on)
   let seeded = false
   on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => {
@@ -330,7 +281,7 @@ test('session.start discards stale reload active but retains host model statisti
     seeded = true
     const legacy: TokenSpeedLegacySnapshot = {
       models: [{ model: 'retained', outputTokens: 200, durationMs: 4000, samples: 2, lastApi: 50 }],
-      currentModel: 'retained', seen: true, live: 80, status: 'streaming',
+      currentModel: 'retained', seen: true, status: 'streaming',
       active: { id: 'old-module', turnId: 'old', model: 'retained', startedAt: 0 },
     }
     // The old host value deliberately violates v2, at this single compatibility boundary.
@@ -340,13 +291,11 @@ test('session.start discards stale reload active but retains host model statisti
   await $.session.start(START)
   await $.session.start(START)
   const held = await state($)
-  expect(held.models[0]?.outputTokens).toBe(200)
+  expect(held.models[0]?.samples).toBe(0)
   expect(held.active).toBeNull()
-  expect(held.live).toBeNull()
   expect(held.status).toBe('aborted')
-  expect(held.models[0]?.legacy).toBe(true)
   expect((await snapshotState($)).version).toBe(2)
-  expect((await command($)).text).toMatch('[legacy v0.1 response model]')
+  expect((await command($)).text).toMatch('不使用本地字符估算或旧全程历史')
 })
 
 const FAULT: Plugin = {
@@ -357,14 +306,14 @@ const FAULT: Plugin = {
     on('command.run', { command: 'fault-toggle' }, async (_$, e) => { failing = e.args; nowCalls = 0; return { text: 'armed' } })
     on('clock.now', async (_$, e, next) => {
       nowCalls++
-      if (failing === 'finish-once' && nowCalls === 3) { failing = ''; return { deny: 'finish clock unavailable' } }
+      if (failing === 'finish-once' && nowCalls === 2) { failing = ''; return { deny: 'finish clock unavailable' } }
       return failing === 'clock.now' ? { deny: 'meter unavailable' } : next(e)
     })
     on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) =>
       failing === 'state.set' ? { deny: 'meter unavailable' } : next(e))
   },
 }
-test('a clock failure only at request finish preserves result, clears live and allows reset', { plugins: [PROBE, FAULT] }, async ($, on) => {
+test('a clock failure only at request finish preserves result, clears active and allows reset', { plugins: [PROBE, FAULT] }, async ($, on) => {
   setup(on)
   let calls = 0
   on('turn.step', async function* (_$, e) { calls++; yield { kind: 'text', text: 'observed', index: 0, ref: 11 }; return result(e) })
@@ -377,7 +326,6 @@ test('a clock failure only at request finish preserves result, clears live and a
   expect(observed.chunks).toEqual([{ kind: 'text', text: 'observed', index: 0, ref: 11 }])
   const held = await state($)
   expect(held.active).toBeNull()
-  expect(held.live).toBeNull()
   expect(held.status).toBe('usage unavailable')
   expect(held.models.reduce((sum, bucket) => sum + bucket.samples, 0)).toBe(0)
   expect((await command($, 'reset')).text).toMatch('已重置')

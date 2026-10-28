@@ -1,7 +1,7 @@
 {
   "name": "token-speed",
-  "version": "0.4.6",
+  "version": "0.5.0",
   "author": { "name": "Ethan" },
-  "description": "主控与活跃子代理各一行实时估算速率，各代理独立按请求模型累计 API 速率",
+  "description": "主控与活跃子代理各一行显示 Last 和 24 小时 Avg 测速，依赖本机 Magpie 与 curl",
   "types": "./types/index.d.ts"
 }

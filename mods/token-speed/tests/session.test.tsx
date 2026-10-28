@@ -1,3 +1,4 @@
+import { uniform, certifiedSample } from './magpie-fixture'
 import { test, expect, mock } from 'claude-code/testing'
 import type { Engine, MockClock, Plugin } from 'claude-code/testing'
 import type { AgentInfo, HookStream, On, RenderPropsOf, SessionRepo, SessionUsage, TurnStepChunk, TurnStepInput, TurnStepResult } from 'claude-code'
@@ -60,6 +61,7 @@ async function finishAt(clock: MockClock, pending: ReturnType<typeof consume>, m
 }
 function setup(on: On, held: Setup = {}, roster: () => Promise<AgentInfo[]> = async () => []): MockClock {
   const clock = mock.clock(on)
+  on('session.id', async () => ({ value: 'session' }))
   // A fixed environment keeps effort readings independent of the host running the tests.
   mock.env(on, held.env ?? {})
   on('fs.read', async () => { held.registryRead?.(); return { value: held.registry ?? JSON.stringify({ version: 1, models: [], overrides: [
@@ -96,7 +98,7 @@ test('agent line shows effort tier colour and a uniform context meter without du
   expect((await main($)).effort).toBe('max')
   expect((await main($)).effortSource).toBe('request')
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  const lines = await ui.findAll({ type: 'Text', text: / · Live / })
+  const lines = await ui.findAll({ type: 'Text', text: / · Last / })
   expect(lines.length).toBe(1)
   expect(lines[0]?.text).toMatch('gpt-6.1-sol · max · Ctx ')
   expect(lines[0]?.text).not.toMatch('codex/')
@@ -166,92 +168,17 @@ test('parallel rows align their label and model columns; a lone row stays natura
   await clock.settle()
   await clock.advance(250)
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  const lines = await ui.findAll({ type: 'Text', text: / · Live / })
+  const lines = await ui.findAll({ type: 'Text', text: / · Last / })
   expect(lines.length).toBe(2)
   expect(lines[0]?.text).toMatch(/⚡ main\s+· gpt-6\.1-sol\s+· high\s+· Ctx/)
   expect(lines[1]?.text).toMatch(/🌳 long-ide · glm-5\.3\s+· —\s+· Ctx/)
   const cells = (text: string): number => Array.from(text).reduce((sum, char) => sum + (char === '⚡' || char === '🌳' ? 2 : 1), 0)
   const prefix = (text: string, marker: string) => cells(text.slice(0, text.indexOf(marker)))
   expect(prefix(lines[0]?.text ?? '', '·')).toBe(prefix(lines[1]?.text ?? '', '·'))
-  expect(prefix(lines[0]?.text ?? '', 'Live')).toBe(prefix(lines[1]?.text ?? '', 'Live'))
+  expect(prefix(lines[0]?.text ?? '', 'Last')).toBe(prefix(lines[1]?.text ?? '', 'Last'))
   await ui.unmount()
   await clock.advance(1750)
   await Promise.all(pending)
-})
-
-test('Avg keeps fresh samples and drops ones older than the rolling day window', OPTIONS, async ($, on) => {
-  const clock = setup(on)
-  let seeded = false
-  on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => {
-    if (seeded) return next(e)
-    seeded = true
-    // A synthetic finish timestamp; negative anchors a sample older than any window.
-    const migrated = { version: 2, rows: [{ id: 'main', description: '', running: false,
-      currentModel: 'm', models: [{ model: 'm', outputTokens: 200, durationMs: 1000, samples: 1, lastApi: 200,
-        log: [{ at: 500, tokens: 200, ms: 1000 }] }], active: null, live: null,
-      status: 'idle', seen: true, turnId: null, revision: 0, effort: null }],
-      session: { context: { tokens: null, window: 0, percent: null }, workspace: null } }
-    return next({ ...e, value: migrated as unknown as TokenSpeedSnapshot })
-  })
-  on('turn.step', async function* (_$, e) { await clock.sleep(3000); return result(e, 300) })
-  await $.session.start(START)
-  let text = (await command($)).text
-  expect(text).toMatch('Avg 200.0 tok/s')
-  expect(text).toMatch('24h 1 个请求')
-  await finishAt(clock, consume($.turn.step(request('m'))), 3000)
-  text = (await command($)).text
-  expect(text).toMatch('Last 100.0 tok/s')
-  expect(text).toMatch('Avg 125.0 tok/s') // 200 + 300 tokens over 1s + 3s.
-  expect(text).toMatch('24h 2 个请求')
-})
-
-test('expired samples leave the window and no longer weigh the average', OPTIONS, async ($, on) => {
-  const clock = setup(on)
-  let seeded = false
-  on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => {
-    if (seeded) return next(e)
-    seeded = true
-    const migrated = { version: 2, rows: [{ id: 'main', description: '', running: false,
-      currentModel: 'm', models: [{ model: 'm', outputTokens: 200, durationMs: 1000, samples: 1, lastApi: 200,
-        log: [{ at: -100 * DAY, tokens: 200, ms: 1000 }] }], active: null, live: null,
-      status: 'idle', seen: true, turnId: null, revision: 0, effort: null }],
-      session: { context: { tokens: null, window: 0, percent: null }, workspace: null } }
-    return next({ ...e, value: migrated as unknown as TokenSpeedSnapshot })
-  })
-  on('turn.step', async function* (_$, e) { await clock.sleep(3000); return result(e, 300) })
-  await $.session.start(START)
-  let text = (await command($)).text
-  expect(text).toMatch('Avg —')
-  expect(text).toMatch('24h 0 个请求')
-  await finishAt(clock, consume($.turn.step(request('m'))), 3000)
-  text = (await command($)).text
-  expect(text).toMatch('Avg 100.0 tok/s')
-  expect(text).toMatch('24h 1 个请求')
-  expect(text).not.toMatch('Avg 200.0 tok/s')
-})
-
-test('migrated v0.2 buckets fall back to the aggregate average until a new request', OPTIONS, async ($, on) => {
-  const clock = setup(on)
-  let seeded = false
-  on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => {
-    if (seeded) return next(e)
-    seeded = true
-    const migrated = { version: 2, rows: [{ id: 'main', description: '', running: false,
-      currentModel: 'codex/gpt-6.1-sol', models: [{ model: 'codex/gpt-6.1-sol', outputTokens: 400,
-        durationMs: 4000, samples: 2, lastApi: 50 }], active: null, live: null, status: 'idle',
-      seen: true, turnId: null, revision: 0, effort: null }],
-      session: { context: { tokens: null, window: 0, percent: null }, workspace: null } }
-    return next({ ...e, value: migrated as unknown as TokenSpeedSnapshot })
-  })
-  on('turn.step', async function* (_$, e) { await clock.sleep(1000); return result(e, 200) })
-  await $.session.start(START)
-  let text = (await command($)).text
-  expect(text).toMatch('Avg 100.0 tok/s')
-  expect(text).toMatch('累计 2 个有效请求')
-  await finishAt(clock, consume($.turn.step(request())), 1000)
-  text = (await command($)).text
-  expect(text).toMatch('Avg 200.0 tok/s')
-  expect(text).toMatch('24h 1 个请求')
 })
 
 test('band budget preserves one complete agent line and places workspace last', OPTIONS, async ($, on) => {
@@ -265,7 +192,7 @@ test('band budget preserves one complete agent line and places workspace last', 
     const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, maxRows } })
     expect(Boolean(await ui.find({ type: 'Text', text: '45%/272k' }))).toBe(true)
     expect(Boolean(await ui.find({ type: 'Text', text: '⌂' }))).toBe(workspace)
-    expect((await ui.findAll({ type: 'Text', text: / · Live / })).length).toBe(1)
+    expect((await ui.findAll({ type: 'Text', text: / · Last / })).length).toBe(1)
     await ui.unmount()
   }
 })
@@ -285,7 +212,7 @@ test('reload initializes main model-specific configuration effort and classic ap
   expect((await main($)).effort).toBe('max')
   expect((await main($)).effortSource).toBe('applied')
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  expect((await ui.find({ type: 'Text', text: /Live/ }))?.text).toMatch('claude-opus-5-5 · max · Ctx')
+  expect((await ui.find({ type: 'Text', text: /Last/ }))?.text).toMatch('claude-opus-5-5 · max · Ctx')
   await ui.unmount()
 })
 
@@ -334,7 +261,7 @@ test('fixed 10-cell block meter: 67 and 68 share a fill but keep distinct intege
   let full67 = ''
   for (const columns of [80, 120, 240]) {
     const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: columns } })
-    const lines = await ui.findAll({ type: 'Text', text: / · Live / })
+    const lines = await ui.findAll({ type: 'Text', text: / · Last / })
     expect(lines.length).toBe(2)
     for (const line of lines) {
       expect(cells(line.text)).toBeLessThanOrEqual(columns)
@@ -355,7 +282,7 @@ test('fixed 10-cell block meter: 67 and 68 share a fill but keep distinct intege
     }
     if (columns === 120) compact67 = mainLine
     const prefix = (text: string, marker: string) => cells(text.slice(0, text.indexOf(marker)))
-    expect(prefix(mainLine, 'Live')).toBe(prefix(lines[1]?.text ?? '', 'Live'))
+    expect(prefix(mainLine, 'Last')).toBe(prefix(lines[1]?.text ?? '', 'Last'))
     expect((await ui.find({ type: 'Text', text: 'rest band' }))?.text).toBe('rest band')
     await ui.unmount()
   }
@@ -363,7 +290,7 @@ test('fixed 10-cell block meter: 67 and 68 share a fill but keep distinct intege
   await clock.advance(1000)
   for (const columns of [120, 240]) {
     const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: columns } })
-    const line = (await ui.findAll({ type: 'Text', text: / · Live / }))[0]?.text ?? ''
+    const line = (await ui.findAll({ type: 'Text', text: / · Last / }))[0]?.text ?? ''
     expect(line).toMatch('68%/272k')
     expect(line).not.toBe(columns === 120 ? compact67 : full67)
     if (columns === 240) expect(((await ui.findAll({ type: 'Text' })).find(node => node.props.backgroundColor === 'rate_limit_empty'))?.text).toBe('█'.repeat(6) + '▊' + ' '.repeat(3))
@@ -401,70 +328,42 @@ function seededBand(on: On, live: number | null, mainContext: TokenSpeedRow['con
     if (seeded) return next(e)
     seeded = true
     const rows: TokenSpeedRow[] = ids.map((id, index) => ({ id, description: '', running: true,
-      currentModel: models[index]!, active: null, live, status: 'streaming', seen: true,
+      currentModel: models[index]!, active: null, status: 'streaming', seen: true,
       turnId: null, revision: 0, effort: 'high', effortSource: 'request',
       context: index < 2 ? mainContext : { tokens: index === 2 ? 5500 : null, window: 0, percent: null, source: 'unknown' },
-      models: [{ model: models[index]!, outputTokens: 286, durationMs: 10000, samples: 1, lastApi: 28.6 }],
+      models: [{ model: models[index]!, metric: 'magpie-measured-v1', log: [certifiedSample()], outputTokens: 286, durationMs: 10000, samples: 1, lastApi: 28.6 }],
     }))
     return next({ ...e, value: { version: 2, rows, session: { context: mainContext, workspace: null } } })
   })
   return ids
 }
 
-for (const live of [null, 42.1]) {
-  test(`phone and wide bands fit cell budgets with full rates and context semantics (Live ${live ?? 'unknown'})`, OPTIONS, async ($, on) => {
-    const ids = seededBand(on, live)
-    await $.session.start(START)
-    const before = await state($)
-    expect(before.rows.map(r => r.id)).toEqual(ids)
-    expect(before.rows.every(r => r.running && r.seen)).toBe(true)
-    expect(before.rows[0]?.models[0]?.outputTokens).toBe(286)
-    const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-    for (const columns of [24, 32, 40, 49, 54, 60, 80, 120, 240]) {
-      await ui.redraw({ ...BAND, bodyColumns: columns })
-      const rows = (await ui.findAll({ type: 'Text' })).filter(node => node.props.wrap === 'truncate-end' && /(?: C| · Ctx )/.test(node.text))
-      expect(rows.length).toBe(ids.length)
-      expect(rows[0]?.text).toMatch(columns < 80 ? /^(⚡ main|m) / : /^⚡ main/)
-      expect(rows[1]?.text).toMatch(columns < 80 ? /^(🌳 alpha-wo|🌳 a) / : /^🌳 alpha-wo/)
-      expect(rows[2]?.text).toMatch(columns < 80 ? /^(🌳 beta-wor|🌳 b) / : /^🌳 beta-wor/)
-      expect(rows[3]?.text).toMatch(columns < 80 ? /^(🌳 gamma-wo|🌳 g) / : /^🌳 gamma-wo/)
-      for (const line of rows) {
-        expect(line.text).not.toMatch(/[\r\n]/)
-        expect(terminalCells(line.text)).toBeLessThanOrEqual(columns)
-        expect(line.props.wrap).toBe('truncate-end')
-        if (columns < 80) expect(line.text).not.toMatch('A28.6/s')
-        else expect(line.text).toMatch('Avg  28.6 tok/s')
-        expect(line.text).not.toMatch('provider/')
-        if (columns < 80) {
-          expect(line.text).not.toMatch(/Last|streaming|Ctx|  /)
-          expect(line.text).not.toMatch('…/s')
-        }
-      }
-      const mainLine = rows[0]?.text ?? ''
-      expect(mainLine).toMatch(columns < 32 ? 'C42%' : '42%/272k')
-      expect(rows[2]?.text).toMatch(columns < 80 ? /C(5\.5k\/)?\?/ : '5.5k/?')
-      expect(rows[2]?.text).not.toMatch(/C0|5\.5k\/0/)
-      expect(rows[3]?.text).toMatch('—/?')
-      if (columns === 49) {
-        expect(mainLine).toBe(`⚡ main gpt-6.1-sol high C42%/272k L${live === null ? '—' : '~42.1'}`)
-        expect(rows[1]?.text).toMatch(/^🌳 alpha-wo very/)
-      }
-      if (columns >= 32 && columns < 80) {
-        expect(rows[1]?.text.startsWith('🌳 alpha-wo ')).toBe(true)
-        expect(rows[2]?.text.startsWith('🌳 beta-wor ')).toBe(true)
-      }
-      if (columns === 24 && live !== null) expect(mainLine).toBe('⚡ main C42%/272k L~42.1')
-      if (columns < 80) {
-        expect((await ui.find({ type: 'Text', text: /^⚡ main$|^m$/ }))?.props.color).toBe('claude')
-        expect((await ui.findAll({ type: 'Text' })).some(node => node.text === ' A28.6/s')).toBe(false)
-        expect((await ui.find({ type: 'Text', text: /^ L—$/ }))?.props.color).toBe(live === null ? 'inactive' : undefined)
-        expect((await ui.findAll({ type: 'Text' })).some(node => node.props.backgroundColor === 'rate_limit_empty')).toBe(false)
-      }
+test('24/32/49/80/120 bands preserve both measured rates, context and distinct identities', OPTIONS, async ($, on) => {
+  const ids = seededBand(on, null)
+  await $.session.start(START)
+  const before = await state($)
+  const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  for (const columns of [24, 32, 40, 49, 54, 60, 80, 120, 240]) {
+    await ui.redraw({ ...BAND, bodyColumns: columns })
+    const rows = (await ui.findAll({ type: 'Text' })).filter(node => node.props.wrap === 'truncate-end' && /(?: C| · Ctx )/.test(node.text))
+    expect(rows.length).toBe(ids.length)
+    for (const line of rows) {
+      expect(terminalCells(line.text)).toBeLessThanOrEqual(columns)
+      expect(line.text).toMatch(/(?:Last\s+|L)28\.6/)
+      expect(line.text).toMatch(/(?:Avg\s+|A)28\.6/)
+      expect(line.text).not.toMatch(/Live|provider\/|~|[\r\n]/)
     }
-    expect(await state($)).toEqual(before)
-    await ui.unmount()
-  })
-}
+    expect(rows[0]?.text).toMatch(columns < 32 ? /C42%/ : /42%\/272k/)
+    expect(rows[2]?.text).not.toMatch(/C0|5\.5k\/0/)
+    expect(rows[3]?.text).toMatch(/(?:C|Ctx ).*(?:—|\?)/)
+    if (columns >= 32 && columns < 80) {
+      expect(rows[1]?.text.startsWith('🌳 alpha-wo ')).toBe(true)
+      expect(rows[2]?.text.startsWith('🌳 beta-wor ')).toBe(true)
+    }
+  }
+  expect(await state($)).toEqual(before)
+  await ui.unmount()
+})
 
 test('one mount restores full layout after 49 → 24 → 120 and preserves unknown percentages', OPTIONS, async ($, on) => {
   seededBand(on, 42.1, { tokens: null, window: 272000, percent: null, source: 'session' })
@@ -475,7 +374,7 @@ test('one mount restores full layout after 49 → 24 → 120 and preserves unkno
   await ui.redraw({ ...BAND, bodyColumns: 49 })
   expect((await ui.findAll({ type: 'Text' })).find(node => node.props.wrap === 'truncate-end' && /^(main|m|⚡ main) /.test(node.text))?.text).toMatch('C—%/272k')
   await ui.redraw({ ...BAND, bodyColumns: 24 })
-  expect((await ui.findAll({ type: 'Text' })).find(node => node.props.wrap === 'truncate-end' && /^(main|m|⚡ main) /.test(node.text))?.text).toBe('⚡ main C—%/272k L~42.1')
+  expect((await ui.findAll({ type: 'Text' })).find(node => node.props.wrap === 'truncate-end' && /^(main|m|⚡ main) /.test(node.text))?.text).toMatch(/C—%.*L28\.6 A28\.6/)
   expect((await ui.findAll({ type: 'Text' })).find(node => node.props.wrap === 'truncate-end' && /^(main|m|⚡ main) /.test(node.text))?.text).not.toMatch('C0%')
   await ui.redraw({ ...BAND, bodyColumns: 120 })
   const restored = (await ui.findAll({ type: 'Text' })).find(node => node.props.wrap === 'truncate-end' && /^(main|m|⚡ main) /.test(node.text))?.text ?? ''
@@ -483,7 +382,7 @@ test('one mount restores full layout after 49 → 24 → 120 and preserves unkno
   expect(restored).toMatch('· Ctx')
   expect(restored).toMatch('—%/272k')
   expect(restored).toBe(wide)
-  expect(restored).toMatch('· Avg  28.6 tok/s')
+  expect(restored).toMatch(/· Avg\s+28\.6 tok\/s/)
   expect((await ui.findAll({ type: 'Text' })).some(node => node.props.backgroundColor === 'rate_limit_empty')).toBe(true)
   await ui.unmount()
 })
@@ -493,7 +392,7 @@ test('narrow child prefixes remain distinct and exceptionally small bands fit wi
   on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => next({ ...e,
     value: { ...e.value, rows: e.value.rows.map((r, index) => index === 2 ? { ...r, currentModel: 'codex/gpt-6.1-sol',
       context: { tokens: 114240, window: 272000, percent: 42, source: 'cli-input-window-config' },
-      models: [{ model: 'codex/gpt-6.1-sol', outputTokens: 286, durationMs: 10000, samples: 1, lastApi: 28.6 }] } : r) } }))
+      models: [{ model: 'codex/gpt-6.1-sol', metric: 'magpie-measured-v1', log: [certifiedSample()], outputTokens: 286, durationMs: 10000, samples: 1, lastApi: 28.6 }] } : r) } }))
   await $.session.start(START)
   expect((await state($)).rows.map(r => r.id)).toEqual(['main', 'agent-one-long-id', 'agent-two-long-id', 'm'])
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
@@ -502,14 +401,14 @@ test('narrow child prefixes remain distinct and exceptionally small bands fit wi
     const rows = (await ui.findAll({ type: 'Text' })).filter(node => node.props.wrap === 'truncate-end' && /(?: C| · Ctx )/.test(node.text))
     const first = rows[1]?.text ?? ''
     const second = rows[2]?.text ?? ''
-    expect(first.split(' ')[1]).not.toBe(second.split(' ')[1])
-    expect(first.startsWith('🌳 agent-on ')).toBe(true)
-    expect(second.startsWith('🌳 agent-tw ')).toBe(true)
+    expect(first.match(/^(?:🌳 )?(\S+)/)?.[1]).not.toBe(second.match(/^(?:🌳 )?(\S+)/)?.[1])
+    expect(first).toMatch(columns < 32 ? /^(?:🌳 )?agent-on? / : /^🌳 agent-on /)
+    expect(second).toMatch(columns < 32 ? /^(?:🌳 )?agent-tw? / : /^🌳 agent-tw /)
     expect(rows[0]?.text.split(' ')[0]).not.toBe(rows[3]?.text.split(' ')[0])
     expect(terminalCells(first)).toBeLessThanOrEqual(columns)
     expect(terminalCells(second)).toBeLessThanOrEqual(columns)
-    expect(first).not.toMatch('A28.6/s')
-    expect(second).not.toMatch('A28.6/s')
+    expect(first).toMatch('A28.6')
+    expect(second).toMatch('A28.6')
   }
   for (const columns of [1, 8, 16, 23]) {
     await ui.redraw({ ...BAND, bodyColumns: columns })
@@ -551,7 +450,7 @@ test('all integer percentages 0..100 map to 81 visual 10-cell fills; 0/50/100 sh
       expect(text).toBe('█'.repeat(10))
       expect((await ui.findAll({ type: 'Text', text: /^█+$/ })).find(node => node.props.color === 'rate_limit_fill')?.text).toBe('█'.repeat(10))
     }
-    expect((await ui.find({ type: 'Text', text: / · Live / }))?.text).toMatch(`${percent}%/272k`)
+    expect((await ui.find({ type: 'Text', text: / · Last / }))?.text).toMatch(`${percent}%/272k`)
     await ui.unmount()
   }
   expect(visuals.size).toBe(81)
@@ -668,6 +567,37 @@ test('partial session readings keep the last known main measurement and a model 
   await pending
 })
 
+test('unchanged configuration preserves the actual bare request bucket and an explicit switch still applies', OPTIONS, async ($, on) => {
+  const clock = setup(on, { usage: { startedAt: 0, context: { tokens: 122400, window: 272000, percent: 45 }, rateLimits: [] },
+    settings: { modelSettings: { 'new/model': { effortLevel: 'medium' } } } })
+  let configured = 'old/model'
+  on('session.model', async () => ({ value: configured }))
+  let seeded = false
+  on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => {
+    if (seeded) return next(e)
+    seeded = true
+    return next({ ...e, value: { ...e.value, rows: e.value.rows.map(r => ({ ...r, currentModel: 'old/model',
+      models: [{ model: 'old/model', metric: 'magpie-measured-v1', log: [certifiedSample()],
+        outputTokens: 286, durationMs: 10000, samples: 1, lastApi: 28.6 }] })) } })
+  })
+  on('turn.step', async function* (_$, e) { await clock.sleep(500); return result(e) })
+  await $.session.start(START)
+  await finishAt(clock, consume($.turn.step(request('model'))), 500)
+  await clock.advance(1000)
+  expect((await main($)).currentModel).toBe('model')
+  expect((await main($)).models.find(bucket => bucket.model === 'model')?.lastApi).toBeNull()
+  const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect((await ui.find({ type: 'Text', text: /Last/ }))?.text).toMatch(/Last\s+—/)
+  await ui.unmount()
+  await $.session.start(START) // Repeated initialization must keep observed request identity.
+  expect((await main($)).currentModel).toBe('model')
+  configured = 'new/model'
+  await clock.advance(1000)
+  expect((await main($)).currentModel).toBe('new/model')
+  expect((await main($)).effort).toBe('medium')
+  expect((await main($)).context.percent).toBe(45)
+})
+
 const EFFORT_SETTINGS = { effortLevel: 'high', modelSettings: { 'codex/gpt-6.1-sol': { effortLevel: 'high' } } }
 
 test('effort environment outranks the saved model configuration at session start without a request', OPTIONS, async ($, on) => {
@@ -676,7 +606,7 @@ test('effort environment outranks the saved model configuration at session start
   expect((await main($)).effort).toBe('max')
   expect((await main($)).effortSource).toBe('configured')
   const ui = await $.ui.mount({ plugin: 'token-speed', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  expect((await ui.find({ type: 'Text', text: / · Live / }))?.text).toMatch(/⚡ main\s+· gpt-6\.1-sol\s+· max\s+· Ctx/)
+  expect((await ui.find({ type: 'Text', text: / · Last / }))?.text).toMatch(/⚡ main\s+· gpt-6\.1-sol\s+· max\s+· Ctx/)
   await ui.unmount()
 })
 

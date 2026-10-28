@@ -1,5 +1,17 @@
 # token-speed Changelog
 
+## 0.5.0
+
+对应 tag `token-speed-v0.5.0`。
+
+- Last/Avg 依赖本机 Magpie 请求记录及 measured Speed 口径，彻底移除字符估算、首内容估算与实时速率列。宽/窄屏保留 Last+Avg；紧凑 L=Last、A=Avg，按实际宽度降级。
+- 按 session、agent、完整 canonical 请求模型、step 起止与 CLI usage 三元组双向唯一匹配；失败、无法测速、延迟未落账、候选歧义或计数不一致为 `—`。只使用本插件实际观察请求，不把 title/fork/其它 session 或旧历史归属当前代理。
+- Avg 按 Magpie完成时间滚动24小时，以测速输出 token 总和/测速窗口总时长计算。旧独立/全程速率桶清除，保留代理/context/effort等元数据；reload保留认证样本，reset/clear和模块generation防止迟到结果重生。
+- 本机 Claude 来源与用途复核，冲突候选保留参与歧义；每次稳定查询复验保留证据的双向唯一关联，迟到歧义或原行消失撤销样本，不将其它行重新归属旧请求。无待匹配请求时不持续查询。
+- loopback URL 校验，通过禁用 curlrc、代理及重定向的无 shell curl GET 查询，仅接受完整 HTTP 200 JSON；单飞后台有限重试、覆盖保留证据与待匹配请求的时间窗、双次完整分页一致性检查。不读取认证，不保存请求正文/账号/错误正文，不重发模型请求；缺少 curl 或查询失败时保持未知。
+- 修复 session id 迟到覆盖、配置刷新覆盖实际 fallback 模型、证据容量过期后无法恢复及过期批次迟到提交；无法取消的宿主状态写入在 settle 后按批次撤销，存在撤销前短暂可读的宿主边界。
+- 新增 mock process 集成和边界测试，保留流透传、生命周期、上下文、effort、工作区与宽度合同；README 说明安装升级、来源与恢复边界。
+
 ## 0.4.6
 
 对应 tag `token-speed-v0.4.6`。

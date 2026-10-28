@@ -1,24 +1,24 @@
-# token-speed 0.4.6
+# token-speed 0.5.0
 
-适用于 Claude Code 2.1.296 的 function-hooks mod。在提示框上方，主控与每个活跃子代理各用一行显示模型、effort、上下文与输出速率，工作区放在最后一行。只观察原有请求，不调用额外模型、不引入 tokenizer 或网络请求；分支通过引擎 process API 调用本机 git。
+适用于 Claude Code 2.1.296 的 function-hooks mod。在提示框上方，主控与每个活跃子代理各用一行显示模型、effort、上下文与输出速率，工作区放在最后一行。只观察原有模型请求，不调用额外模型或 tokenizer。速率依赖本机 Magpie 和 `curl`，请求完成后通过引擎 process API 安全读取本地用量；分支通过同一 API 调用本机 git。
 
 ```text
-⚡ main · gpt-6.1-sol · high · Ctx ██████▊    67%/500k · Live ~42.1 · Last 31.2 · Avg 28.6 tok/s · streaming
-🌳 abcdefg1 · glm-5.3-flash · max · Ctx █▍         14%/1.0M · Live ~35.2 · Last 29.1 · Avg 30.4 tok/s · streaming
+⚡ main · gpt-6.1-sol · high · Ctx ██████▊    67%/500k · Last 31.2 · Avg 28.6 tok/s · streaming
+🌳 abcdefg1 · glm-5.3-flash · max · Ctx █▍         14%/1.0M · Last 29.1 · Avg 30.4 tok/s · streaming
 ⌂ Claude-workflow on main
 ```
 
-主控始终第一，子代理按首次观察顺序每个一行，切换 view 不过滤。短 id 自动延长到可区分同会话代理；工具间隙保留行，Live 为 `—`，明确终态后隐藏，历史通过 `/tok-speed` 查询。带 survey 或 `maxRows=0` 时隐藏，其它插件和引擎的内容原样保留。只有主控时为代理行加工作区行，共两行；行数预算不足先丢工作区。
+主控始终第一，子代理按首次观察顺序每个一行，切换 view 不过滤。短 id 自动延长到可区分同会话代理；工具间隙保留行，Last 保留最近一次请求结果，明确终态后隐藏，历史通过 `/tok-speed` 查询。带 survey 或 `maxRows=0` 时隐藏，其它插件和引擎的内容原样保留。只有主控时为代理行加工作区行，共两行；行数预算不足先丢工作区。
 
-各列按终端显示宽度对齐，包括双宽的 `⚡`、CJK 与常见 emoji。宽屏速率数字右对齐，单位 `tok/s` 每行只显示一次；宽度不足时先省略 status、Last、进度条，再缩短模型。如果原布局会把模型压到不足 4 格（原名称不足 4 格时保留原宽），或最小布局仍超宽，就切换为每代理一行的紧凑格式：
+各列按终端显示宽度对齐，包括双宽的 `⚡`、CJK 与常见 emoji。宽屏速率数字右对齐，单位 `tok/s` 每行只显示一次；不足时先省略 status、进度条，再缩短模型。Last 和 Avg 始终同等优先。模型压到不足 4 格（原名称不足 4 格时保留原宽）时切换为每代理一行的紧凑格式：
 
 ```text
-⚡ main gpt-6.1-sol high C42%/500k L—
-⚡ main C42%/500k L~42.1
-🌳 abc12345 中文🙂长模型 max C—/? L~0.0
+⚡ main gpt-6.1-sol high C42%/500k L31.2 A28.6
+⚡ main C42% L31.2 A28.6
+🌳 abc12345 C—/? L— A—
 ```
 
-紧凑格式只保留一个实时速率 `L`（Live），手机端不再显示 Avg；Avg 仍在宽屏布局与 `/tok-speed` 中查看。主控标签为 `⚡ main`，与宽屏一致。`C` 为上下文、`L` 为 Live，Live 的估算标记 `~` 保留。紧凑行不画条形，不显示 Last/status，不给数字加对齐空格；按各行实际 cell 宽度先缩短模型至至少 4 格，再依次省略模型、effort、上下文窗口容量，保留百分比或未知标记，绝不把未知写成 0%。32 列及以上子代理保留原短 id；24–31 列必要时改用可见代理内可区分的最短前缀，主控可缩为 `m`。常规手机宽度优先完整保留上下文读数与 Live 数字及单位；异常长数值或不足 24 列时可再省略 Live，最终截断仅作保护。紧凑模式子代理行以 `🌳` 作前缀（worktree/子代理标识，宽屏与紧凑一致）；工作区行以 `⌂` 开头，紧凑模式只显示分支（无分支时显示仓库名），宽屏为 `⌂ 仓库名 on 分支`。每次渲染重新计算预算，终端变宽后自动恢复完整布局。
+紧凑行优先显示 `Last`、`Avg`；空间不足时 `L` 明确表示 Last、`A` 表示 Avg，单位同为 tok/s。按实际 cell 宽度依次缩短模型、省略模型、effort、上下文窗口容量，保留百分比或未知标记；不会将未知显示为 0%。32 列以上保留代理短 id，24–31 列必要时用可区分最短前缀，主控可缩为 `m`，子代理必要时省略 `🌳` 以保留两项速率。只有异常长读数或极窄终端仍装不下时，才进一步降级，最终截断仅作保护。紧凑行不画进度条，工作区行只显示分支（无分支时显示仓库名）。每次渲染重新预算，变宽自动恢复完整布局。
 
 宽度采用宿主提供的 `bodyColumns`，可能小于终端总列数。`[-]` 折叠标记、滚动和 `n more` 提示由 Claude Code 的 AbovePrompt 宿主管理；插件不改变其行数预算，有空余行才在代理之后显示工作区。
 
@@ -32,61 +32,76 @@
 
 Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.effort`，`applied` 为 classic PostToolUse/Stop 的 `effort.level`，`configured` 为主控当前模型的配置后备：先读取环境变量 `CLAUDE_CODE_EFFORT_LEVEL`，合法档位优先于 settings；变量缺失、不合法或读取失败时，依次回退到 `modelSettings[model].effortLevel`、全局 `effortLevel` 与明确模型后缀。reload 后主控立即读取配置后备，无数据为 `—`；不硬编码 high，不扫描 agent 定义。`request` 与 `applied` 读数仍优先于 `configured`（更可靠），且各自保留来源记录。`configured` 只是配置档位，不能当作上游实际应用的证据，外部 provider 是否已应用不保证。只选取 settings 的这些 effort 字段与上述环境变量，不保存或打印其它 settings 或环境变量。
 
-工作区为仓库根目录名（非 git 使用会话根目录名），附当前分支；detached HEAD 不显示分支，约每 5 秒刷新。显示使用 theme tokens：主控标签为 `claude`、子代理标签与行次要信息为 `inactive`；模型名为 `text`（普通文本，不着色）；有效 Live/Avg/Last 数字为 `text`，缺值为 `inactive`，速率不以 `success` 表示；effort 按档位着色（数值为 `subtle`）；状态 idle/waiting/streaming 为 `inactive`，aborted 为 `warning`，error 为 `error`，usage unavailable 为 `warning`。工作区行为 `inactive`。颜色跟随 CLI 主题。
+工作区为仓库根目录名（非 git 使用会话根目录名），附当前分支；detached HEAD 不显示分支，约每 5 秒刷新。显示使用 theme tokens：主控标签为 `claude`、子代理标签与行次要信息为 `inactive`；模型名为 `text`（普通文本，不着色）；有效 Avg/Last 数字为 `text`，缺值为 `inactive`，速率不以 `success` 表示；effort 按档位着色（数值为 `subtle`）；状态 idle/waiting/streaming 为 `inactive`，aborted 为 `warning`，error 为 `error`，usage unavailable 为 `warning`。工作区行为 `inactive`。颜色跟随 CLI 主题。
 
 ## 安装
+
+在 Claude Code 中添加 marketplace 并安装：
 
 ```text
 /plugin marketplace add liuyejinghong/Claude-workflow
 /plugin install token-speed@claude-workflow-mods
 ```
 
-也可用固定 tag `token-speed-v0.4.6` 获取源文件，并从 checkout 加载：
+也可用固定 tag `token-speed-v0.5.0` 获取源文件，并从 checkout 加载：
 
 ```sh
-git clone --branch token-speed-v0.4.6 https://github.com/liuyejinghong/Claude-workflow.git
+git clone --branch token-speed-v0.5.0 https://github.com/liuyejinghong/Claude-workflow.git
 claude --plugin-dir ./Claude-workflow/mods/token-speed
 ```
 
-安装后的插件由 Claude Code 加载。开发时修改自己的 checkout；请勿直接修改 plugins/cache 副本。
+已安装用户升级时，先刷新 marketplace，再更新插件；在已有会话中执行 `/reload-plugins` 加载更新：
+
+```text
+/plugin marketplace update claude-workflow-mods
+/plugin update token-speed@claude-workflow-mods
+/reload-plugins
+```
+
+升级到 0.5.0 会清空旧测速历史，仅从升级后插件实际观察到的请求开始统计；Avg 只包含本会话中每代理、每完整请求模型最近 24 小时内的有效测速请求，不补录旧请求。安装后的插件由 Claude Code 加载；开发时请修改自己的 checkout，不要直接修改 `plugins/cache` 副本。
 
 ## 命令
 
-- `/tok-speed`：列出各代理的短 id 角色、任务描述、当前模型、实时估算和各模型历史累计，以及统计口径。
+- `/tok-speed`：列出各代理的短 id 角色、任务描述、当前模型、各模型 Last 和最近 24 小时 Avg，以及 Magpie 来源、请求匹配条件与统计范围。
 - `/tok-speed reset`：清空本会话统计。任意代理请求仍 active 时拒绝；工具间隙可 reset，保留活跃代理元数据和行。
-- `/clear`：清空统计、代理行与实时请求；晚返回的旧流或 spawn 元数据不复活统计，新 turn.step 重启计时器。
+- `/clear`：清空统计、代理行与待匹配请求；晚返回的旧流、HTTP 或 spawn 元数据不复活统计，新 turn.step 刷新 session id 并重启计时器。
 
-状态包括 `waiting`、`streaming`、`idle`、`aborted`、`error`、`usage unavailable`。新采纳的代理没有可观察 stream 时 Live 为 `—`，模型为 `unknown`，直到 step 或有明确 resolved model 的 spawn。流内停顿仍为 streaming，Live 随窗口衰减。
+状态包括 `waiting`、`streaming`、`idle`、`aborted`、`error`、`usage unavailable`。状态只反映原模型流：没有内容前为 waiting，观察到内容后为 streaming，结束后按实际结果更新；状态和速率落账独立，新请求开始立即清该模型 Last，后台证明关联前保持 `—`。新采纳代理模型为 `unknown`，直到实际 step 或明确 resolved model 的 spawn。
 
 ## 模型名称与独立统计
 
-每个代理独立按 **请求 `turn.step.model`** 累计；两个相同模型代理不共享统计桶。`usage.model` 仅是响应事实，不改变标签或桶。真实请求模型切换建立新桶。
+每个代理独立按 **请求 `turn.step.model`** 统计；两个相同模型代理不共享桶。`usage.model` 和 Magpie `served` 不改变标签或桶。只清理末尾 `[1m]`、`(high)`、`:high` 等已知配置后缀，完整渠道是请求身份的一部分，不以尾名推断渠道；bare model 与 `channel/model` 不相等，同名换渠道也不串。UI 仅隐藏最后 `/` 之前的渠道前缀，命令保留完整名；其它合法冒号部分不删除。
 
-统计桶与命令保留已有完整渠道模型名，UI 仅隐藏最后 `/` 之前的渠道前缀；其它合法冒号部分不会删除。
-
-0.1 的 host state 会迁移到主控行，其 response-model 均值保留为 `[legacy v0.1 response model]` 桶，在 `/tok-speed` 可查。由于旧桶缺乏请求渠道证据，它们不会随意合并或混入 0.2 的请求模型均值；UI Avg 只取新请求桶。
+升级清除旧全程和独立估算的速率桶，保留代理、context、effort、workspace 等元数据；仅 `magpie-measured-v1` 且带匹配证据的样本可以进入当前 Last/Avg。
 
 ## 统计含义
 
-**Live 是估算值，始终带 `~`。** 收集最近 3 秒实际观察到的 text、thinking 和工具调用 JSON 参数字符；tool、engine、stop chunk 不增加计数。按 Unicode code point 计数：CJK Unified Ideographs（U+3400–4DBF、U+4E00–9FFF）、兼容汉字（U+F900–FAFF）及补充汉字（U+20000–323AF）每 code point 估为 1 token，其余为 0.25。不是 tokenizer 精确计数。
+**Last 和 Avg 直接采用本机 Magpie 的 measured Speed 口径，不带估算 `~`。** 依赖 Magpie v0.1.1792 的请求用量字段及 `ledDecode` 算法；只使用 measured，不混入页面可能显示的 `>=` floor。不保证底层供应商真实 reasoning token 数或推理耗时绝对准确。
 
-分母为 `min(3000ms, 当前时间 - 请求开始时间)`。不足 250ms 为 `—`；请求开始至首个 chunk 的等待也计时。仅计近 3 秒字符，停流超过 3 秒变为 `~0.0 tok/s`。每 250ms 共用一次 host clock 时间和一次原子 snapshot update，批量发布所有活跃 loop；每个字符 chunk 调用一次 clock.now，不按 chunk 写 host state。
+- Last：本代理、本请求模型最近一次实际观察到的 step 唯一匹配 Magpie 请求的单条测速。最新 step 失败、中断、缺 usage、被过滤、关联歧义或尚未落账为 `—`，不回退最近可测速请求。
+- Avg：**本 session、本插件启动后实际观察到的请求**中，该代理、该完整请求模型最近 24 小时有效测速输出 token 总数 / 测速窗口总时长，按 **Magpie 请求完成时间 `t + ms`** 判窗，边界及更早样本出窗；不取每条速度算术平均，不跨 session。例如 149/1294ms 与正文 184/1673ms 合并为 333/2967ms≈112.2 tok/s。
+- 没有 reasoning 时用 `out / (ms - ttft_ms)`；reasoning>0 且 first_text>0 时用 `(out - reasoning) / (ms - first_text_ms)`；否则仅在 first_reasoning≥ttft、flow>0、reasoning≤out 时用全部输出及 first_reasoning。
+- hidden 且无 first_text、无 TTFT、output≤0、窗口不足100ms、超过10000 tok/s、flow×4<测速窗口、可见 reasoning 后正文突发条件触发、失败/取消/截断均不测速。optional reasoning/flow 省略按 Magpie JSON 为0；status/out/ms/ttft 等必要字段缺失不可补猜。149/1294ms≈115.1；638总输出含454 reasoning，正文184/1673ms≈110.0。
 
-**Last / Avg 是 CLI usage 的 API 全程输出速率。** 每个 turn.step 从 hook 开始计时至最终结果返回，包含 TTFT、thinking、网络、请求内停顿和内置 API 工具耗时；排除两次请求之间的工具或用户空闲，非纯解码速度。
+插件优先读取进程 `ANTHROPIC_BASE_URL`，缺失或读取失败才用 `settings.env.ANTHROPIC_BASE_URL`；明确设置的远程/非法地址不回退。只允许无用户名密码的 http(s) `localhost`、`127.0.0.1`、`[::1]` 字面地址。通过无 shell 的 `curl` GET 查询，禁用 curlrc、代理及重定向，仅接受 HTTP 200；连接和进程均有有限超时，缺少 curl、非零退出、输出截断或无效 JSON 时保持未知。无认证信息读取或传播，不保存账号、上游身份、错误正文或请求内容。
 
-- Last：当前请求模型最近请求的 `output_tokens / 秒数`。失败、中断、无有效 usage 或耗时不大于 0 为 `—`。
-- Avg：该代理、该请求模型**最近 24 小时滚动窗口**内的 `有效 output_tokens 总和 / 有效请求耗时总和`，不取速度算术平均，按请求完成时间戳（clock epoch ms）判窗，出窗样本即弃——窗口是相对时间，与本地时区（含 UTC+8）无关。例如窗口内 `100/2s + 300/3s = 80 tok/s`。迁移自 v0.2 的无时间戳桶在首个新请求前退回全程累计口径。
-- usage null、count 缺失/NaN/Infinity/负数、耗时不大于 0 均不入平均；有限非负 0 是有效样本。turn.complete 的汇总 usage 不重复累计。
+访问本地 `/v1/magpie/usage/requests?via=through&computer=this&q=<session>`，客户端复核 `(native_session || session) === $.session.id()`、主控 subagent 为空/子代理 id 精确相等、canonical 完整 `req` 与 step model 相等。只采纳 agent 为 `claude`、`claude-code` 或 `cc`，且 kind、via、computer、source 缺省或为空的本机普通 Claude 请求；title/summary 等用途、非 Claude、同步来源、远程转发、handed_on/rejected 条目不能提供测速。相同匹配条件下的这些冲突条目仍参与歧义判定，不会因提前排除而制造唯一关联。`computer=this` 和客户端字段只能排除有标记的跨机来源，不能识别所有 LAN 直连；session id 也不是完整请求 id。
 
-CPA 上游缺失 token count 可能被 CLI 规范化为 0。mod 无法区分实际 0 和上游遗漏后的 0；API 统计表示 CLI usage 口径，整段 usage null 和仍可观察的无效 count 不计入。
+`turn.step` 不提供 HTTP request id，因此还须网关开始时间处于观察到的 step 起止之间、完成与 step finish 相差不超过2秒，以及 CLI `input+cache_write / output / cache_read` 三元组相等，建立双向唯一一对一关联。缺 usage、0、deferred/retry 导致计数不一致、同 tokens 的 title/summary/fork 候选、一条网关行对应两个 step 都为 `—`。本地后处理/排队超过2秒会保守拒绝，不放宽猜测。API 的 q 不检索 native_session；自定义 X-Magpie-Session 覆盖时可能查不到，不能承诺覆盖，查不到不归属。
+
+后台在请求结束至少750ms后，于1秒轮询中开始匹配；延迟落账最多5次指数节流重试，证明前 Last 为 `—`。单飞批量处理并发代理，缓存已认证样本、避免重复加总。查询通常使用至少15分钟的小窗口，并从本批待匹配请求和仍需复验的保留证据最早起点之前覆盖；长请求即使开始在48小时外，仍扩大窗口而不截断。每页最多500、总上限2000行；连续完整分页再完整重读一次，任何边界、顺序、total变化或重复都废弃本批，不使用不完整结果声称准确。
+
+每次成功稳定查询都重新检查已有样本双向唯一且仍对应原本的本地测量 key；歧义、缺失或匹配改成另一条记录时撤销该样本，Avg 不再包含它，若它是最新 Last 也清为 `—`。失败或不稳定查询不撤销已认证数据。没有待匹配请求时停止查询，因此迟到账的第二候选要到后续请求触发查询才会发现；不承诺持续审计。证据最多4096条，超过容量时新请求保持未知，过期且非 pending 的证据在下一次请求结束时回收，之后自动恢复。
+
+每批4秒后尚未提交的结果失效；单次 curl 连接最多1秒、传输最多2秒，宿主进程调用最多2.5秒。状态提交也检查批次与会话；若宿主已发出的状态写入跨过截止才落地，settle 后按批次撤销，未满5次的待匹配请求可后续重试。若该提交恰逢模块重载、旧 lease 已失效，这个已通过双向唯一性验证但超过截止的批次可能被新模块保留。宿主状态写入不可取消，这种迟到提交可能在撤销前被短暂读取；挂起期间保持单飞，不影响真实模型流。样本只在会话 host state，未匹配证据不跨 reload，旧步骤无观察证据不作历史归属。`turn.complete` 汇总 usage 不重复累计；失败仅清当前请求 Last，不清其它 Avg。
 
 ## 生命周期与边界
 
-统计在本 session 的 version 2 host PluginState，每 loop 单独 row，顺序稳定；本地 Map 只保存流累加器。reload 保留统计，丢弃无法接管的 stale active，以 `$.agent.list()` 重建在跑子代理元数据。该 API 不含模型；未观察到请求的代理显示 unknown/Live —。每 1 秒轻量 reconcile 与上下文用量轮询、每 5 秒工作区刷新在无流时也运行，值未变化不写状态；渲染不查询或写这些来源，只读 host state。每请求的完成样本保留 24 小时滚动日志支撑 Avg。失败 list 保留行；生命周期 revision guard 防止旧 list 返回覆盖刚开始/完成的新 turn。只采纳 running；waiting 和工具间隙不判完成；仅 completed/failed/killed 明确终态收尾，不根据 absence 结束新 spawn。
+统计在本 session 的 version 2 host PluginState，每 loop 单独 row，顺序稳定。reload 保留已认证 Magpie 样本与元数据，旧 active 标为 aborted，旧模块用 host generation lease 拒绝异步写回；以 `$.agent.list()` 重建在跑代理元数据。该 API 不含模型，未观察请求的代理保持 unknown/Last —。每1秒 reconcile、每秒错开上下文用量轮询、每5秒工作区刷新在无流时也运行；渲染只读 host state，绝不等网络。失败 list 保留行；生命周期 revision guard 防止旧 list 覆盖新 turn，只采纳 running、仅明确 completed/failed/killed 收尾，不按 absence 结束新 spawn。reset 成功清 samples/pending 并使旧异步结果失效；active 时仍拒绝，工具间隙保留活跃代理元数据。
 
-`agent.list()` 只涉及本 session 的子代理/teammate，不扫描其它 CLI 或远程 session。API 不列 workflow agent，也无法观察远程 workflow loop；有本地 turn.step 时可单独统计。无可观察 stream 的行永远不推算速度。重复 session.start 不重复创建 timer；session.end 取消 timer 清空统计，不跨会话持久化。
+`agent.list()` 只涉及本 session 的子代理/teammate，不扫描其它 CLI 或远程 session。API 不列 workflow agent，也无法观察远程 workflow loop；有本地 turn.step 时可单独统计。无实际观察 step 的行永远不推算速度。重复 session.start 不重复创建 timer；session.end 取消 timer 清空统计，不跨会话持久化。
 
-流 hook 只调用一次 next(e)，原样 yield 所有 chunk/ref，原样返回 HookStream.result；不更改请求、顺序或工具 JSON。仪表自身异常被捕获，真实下游错误继续抛出，不重复请求。每个 loop 仅清理自己的 active/live。
+流 hook 只调用一次 next(e)，原样 yield 所有 chunk/ref，原样返回 HookStream.result；不更改请求、顺序或工具 JSON。仪表自身异常被捕获，真实下游错误继续抛出，不重复请求。每个 loop 仅清理自己的 active。
 
 ## 开发检查
 
@@ -98,4 +113,4 @@ claude plugin test <mod-dir>
 
 本目录 tsconfig 开启 strict/noUncheckedIndexedAccess，包含 hooks、tests、自有 types 和生成的 `.claude-plugin/types`。测试使用实际 `claude-code/testing` 和 mock.clock 合成 stream，不联网或调用模型。
 
-测试保留流透传、单次 next、测量/Unicode/加权平均、失败清理、reset/clear/reload、并发独立桶与生命周期竞态合同，并核验统一代理行、配置 effort 后备、主控/子代理上下文隔离、成功压缩、10 格块状条 80 档视觉映射（0–100 为 81 种可见状态，67/68 同形但数字不同）、配置子代理窗口、24/32/40/49/54/60/80/120/240 列预算、同 mount 缩窄后恢复、窄屏标识区分与未知语义、显示宽对齐、UI 隐藏渠道和命令完整渠道。kit 只验证引擎 tree 与合同，不代替终端字体的实际截图验收。
+测试通过 mock process 模拟 curl，不访问外网或增加模型调用。覆盖 Magpie measured 已核实数值、reasoning/hidden/burst 过滤、必要字段缺失、加权平均、session/agent/完整渠道隔离、来源冲突、认证后双向复验、稳定分页、延迟落账与重试上限、curl失败/重定向/截断/超时、reset/clear 迟到保护、独立 host lease 替换及旧证据恢复；保留单次 next、原chunk/ref/result透传、生命周期竞态、上下文/effort/工作区、10格进度条、24/32/49/80/120等宽度预算、两项速率和未知语义。测试框架未提供模块热替换接口，恢复测试使用旧 host state 注入，lease 测试只替换 lease 且不 reset，未声称覆盖真实模块重载。真实会话中的匹配覆盖率及终端字体仍需现场观察，不能从 mock 推断。
