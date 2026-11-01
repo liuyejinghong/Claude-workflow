@@ -1,10 +1,12 @@
 # 角色卡：岗位候选与优先级
 
-skill `multi-model-orchestration` 的按需参考：决定"某个岗位用哪些原生 agent、按什么顺序"时读这里。角色卡只管候选与优先级；模型、effort、工具与描述仍以原生 agent 定义为准，JSON 不改 agent 权限，也不代配路由。
+skill `multi-model-orchestration` 的按需参考：决定"某个岗位用哪些原生 agent、按什么顺序"时读这里。角色卡是可选配置，只在用户明确要求时写入；默认安装不创建角色卡。没有角色卡时，五岗没有候选表；已有角色代理仍可按现有有效规则使用。角色卡只管候选与优先级；模型、effort、工具与描述仍以原生 agent 定义为准，JSON 不改 agent 权限，也不代配路由。
 
 ## 配置位置与结构
 
 全局配置：`<config>/orchestration.json`，`<config>` 依次取 `CLAUDE_HOME`、`CLAUDE_CONFIG_DIR`、`~/.claude`。
+
+以下 JSON 是结构示例，不代表当前环境的实际配置，也不是默认安装的一部分。其中的 `your-*` 是占位符，不代表真实可用；必须替换为你当前会话工具目录里确切的原生 agent 名，并先确认可调用。派发前运行 `cards` 读取当前角色卡。
 
 ```json
 {
@@ -12,28 +14,22 @@ skill `multi-model-orchestration` 的按需参考：决定"某个岗位用哪些
   "roles": {
     "worker": {
       "candidates": [
-        {"agent": "minimax-m3.1-flash-free", "priority": 1},
-        {"agent": "deepseek-v4.1-flash-free", "priority": 2},
-        {"agent": "deepseek-v4.1-flash", "priority": 3},
-        {"agent": "glm-5.3", "priority": 4},
-        {"agent": "glm-5.3-flash", "priority": 0}
+        {"agent": "your-worker-agent", "priority": 1},
+        {"agent": "your-alternate-agent", "priority": 2},
+        {"agent": "your-disabled-agent", "priority": 0}
       ]
     },
-    "engineer": {"candidates": [{"agent": "gpt-6.1-sol", "priority": 1}]},
+    "engineer": {"candidates": [{"agent": "your-strong-engineering-agent", "priority": 1}]},
     "reviewer": {
       "candidates": [
-        {"agent": "gpt-6.1-sol", "priority": 1},
-        {"agent": "gpt-6-astra", "priority": 2}
+        {"agent": "your-reviewer-agent", "priority": 1},
+        {"agent": "your-second-reviewer-agent", "priority": 2}
       ]
     },
     "researcher": {
-      "candidates": [
-        {"agent": "minimax-m3.1-flash-free", "priority": 1},
-        {"agent": "deepseek-v4.1-flash-free", "priority": 2},
-        {"agent": "deepseek-v4.1-flash", "priority": 3}
-      ]
+      "candidates": [{"agent": "your-research-agent", "priority": 1}]
     },
-    "editor": {"candidates": [{"agent": "gemini-3.8-flash", "priority": 1}]}
+    "editor": {"candidates": [{"agent": "your-editor-agent", "priority": 1}]}
   }
 }
 ```
@@ -43,7 +39,7 @@ skill `multi-model-orchestration` 的按需参考：决定"某个岗位用哪些
 - 拒绝：bool 当整数、越界 priority、未知字段、同一岗位内 agent 重复。跨岗位可以重复同一 agent。没有 `enabled` 字段——启停只用 priority 表达。
 - 卡不复制 model/effort/description：这些以原生 agent 定义为准。
 
-完整示例见 [examples/magpie/orchestration.json](https://github.com/liuyejinghong/Claude-workflow/blob/main/examples/magpie/orchestration.json)：按维护者本机已装的原生 agent 写出，两个 free 档定义（`minimax-m3.1-flash-free` 与 `deepseek-v4.1-flash-free`）已收录在 `examples/magpie/agents/`，可用 `./install.sh --preset` 一并安装；换环境仍要把 `agent` 改成你目录里的确切名字。
+默认安装不创建 `orchestration.json`，已有角色卡会保留并按有效配置使用；需要新建角色卡时，按你当前会话里实际可调用的代理写卡。写卡前先确认候选已在工具目录加载；`your-*` 占位符不是可用性声明。派发时运行 `cards`，该命令只读当前文件，不会自动生成或补全角色卡。
 
 ## 读取卡
 
@@ -55,9 +51,9 @@ python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role R
 
 - 每次调用都重新读表：改 priority 不需要重启或 reload。
 - 输出：`ok` / `command` / `config_path` / `configured` / `roles[]`。`roles[]` 每项含 `role`、`description`、`body`、可选 `tools`、`configured`、`candidates`（启用候选，priority 1..10，按 priority 稳定排序）、`disabled_candidates`（priority 0 的停用项，按卡内原序）。`--role` 只返回该岗位。
-- 整个配置文件缺失：`configured` 为 false，明确报告"未配置"，按原有 description 选型流程走，不猜不虚构。
+- 整个配置文件缺失：`configured` 为 false，明确报告角色卡未配置；五岗没有候选表。已有的角色代理仍可按当前会话实际可用 agent 的 description 与用户指定选型，不猜不虚构，也不称为角色卡分流。
 - 配置损坏：直接报告需要修复（指出非法字段），**不**静默回退默认选型。
-- 配置文件存在但该岗位被省略、`candidates` 为空或全为 priority 0：该岗位没有可派发候选，报告缺口；**不**回退推荐模型，也不绕过 priority 0 去默认派发。
+- 配置文件存在但该岗位被省略、`candidates` 为空或全为 priority 0：该岗位没有可派发候选，报告缺口；**不**回退任何默认名单，也不绕过 priority 0 去默认派发。
 - 只读本地文件：不读密钥、不联网。
 
 ## 运行时怎么用
@@ -67,7 +63,9 @@ python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role R
 1. 先读岗位定义（职责合同与工具范围）。
 2. 结合当前会话工具目录里 agent 的 description 判断适用性、模态与限定条件；只考虑目录里已显示、可直接调用的 agent，文件存在不等于已加载。
 3. 在适用、已启用（priority ≥ 1）且已加载的候选里按 priority 选（1 最高、10 最低，同值按卡内顺序）。
-4. 本次用户指定的模型优先，但不能默默启用 priority 0 的停用项；要用停用项就改卡，不构造额外确认流程。
+4. 本次用户指定的模型优先，但不得绕过 priority 0；要用停用项必须先改卡，不构造额外确认流程。
+
+卡未配置时没有候选表：明确报告角色卡未配置，按当前会话实际可用 agent 的 description 与用户指定选型，不得自动按角色卡挑候选或声称已配置角色卡分流。
 
 冲突口径：卡维护的偏好排序优先于原 agent description 或全局规则里"相对默认/备用"的措辞；职责范围、"仅用户指定才用"这类硬边界仍然有效，照旧按 agent 定义与主控规则执行。
 
@@ -82,7 +80,7 @@ python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role R
 
 ## 写卡（plan 的 orchestration 段）
 
-plan 新增顶层 `orchestration`，值就是上面那份完整配置（`version` + `roles`），可与 `roles`（单模型入口）、`context`、`always_delegate` 并存：
+只有在用户明确要求配置岗位候选与优先级时才写卡；默认安装、普通任务或未经确认的候选都不写。plan 新增顶层 `orchestration`，值就是上面那份完整配置（`version` + `roles`），可与 `roles`（单模型入口）、`context`、`always_delegate` 并存：
 
 ```json
 {
@@ -93,19 +91,20 @@ plan 新增顶层 `orchestration`，值就是上面那份完整配置（`version
 }
 ```
 
+- 示例中的 `existing-agent` 是占位符，必须换成当前工具目录里实际可调用且用户确认的名称。
 - 走现有 preview → apply → verify：preview 给出目标文件与字段，apply 先做唯一备份，再逐文件原子替换。
 - 只有 `orchestration` 时只写这一个 JSON：零 agent、零 settings、零全局 `CLAUDE.md` 改动。新建的配置文件权限 0600；已有文件保持原权限。
 - 字段非法、未知字段、越界 priority 等一律拒绝，不用空对象覆盖原文件。
 
 ## 什么时候走哪条路
 
-- 已有可复用的原生 agent：写卡即可（轻量路径）。不跑 scan 安装流程，不动 provider、订阅与上下文参数。
-- 缺 agent，或要显式配置单模型入口（`roles.<role>.model`）：走 [installation.md](installation.md) 的 scan → 匹配 → 上下文检查 → preview → apply。
+- 用户明确要求配置、且已有可复用的原生 agent：写卡即可（轻量路径）。不跑 scan 安装流程，不动 provider、订阅与上下文参数。
+- 用户明确要求，且缺 agent，或要显式配置单模型入口（`roles.<role>.model`）：走 [installation.md](installation.md) 的探索与确认 → 上下文检查 → preview → apply。
 - 角色卡不代配路由与凭据。
 
 ## 与旧单模型入口的关系
 
-- 旧 `roles.<role>.model` / `effort` 生成的 `workflow-*` 单模型 agent 入口保留可用（兼容路径），覆盖当前五个岗位。
+- 旧配置已生成的 `workflow-*` 单模型 agent 入口保留可用（兼容路径），覆盖当前五个岗位；默认安装不生成这些入口。
 - 新配置优先引用你已有的原生 agent，不为每个岗位再生成一份重复代理。
 - 旧 `visual` 岗位不再提供：已存在的 `workflow-visual` 文件不会被删除或改动。要继续用这类能力，改用其他岗位并配一个已确认原生视觉的 agent；不承诺自动迁移。
 

@@ -1,7 +1,7 @@
 ---
 name: glm-5.3
 description: >-
-  GLM-5.3 is a regular coding agent for Claude Code CLI under a controller-defined plan, an alternative to MiniMax M3.1 Flash Free, the preferred default everyday-execution worker, with DeepSeek V4.1 Flash as the backup: business logic, fixes with an established root cause, test additions, and non-mechanical, behavior-preserving refactors across files. It is text and code-only with no native vision and can only consume text already extracted from images; visual interpretation goes to agents with native vision. Complex root causes and high-risk work remain with the controller or GPT-6.1 Sol.
+  GLM-5.3 is a regular coding agent for Claude Code CLI under a controller-defined plan: business logic, fixes with an established root cause, test additions, and non-mechanical, behavior-preserving refactors across files. Selection order comes from the live role card. It is text and code-only with no native vision and can only consume text already extracted from images; visual interpretation goes to agents with native vision. Complex root causes and high-risk work remain with the controller or GPT-6.1 Sol.
 model: "zcode/glm-5.3[1m]"
 effort: max
 color: cyan

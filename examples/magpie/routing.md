@@ -1,8 +1,8 @@
 # Magpie 上游与模型路由
 
-> 本页是 `./install.sh --preset` 个人预设的示例环境说明，不是通用安装要求；通用安装见 [README](../../README.md#快速开始)。
+> 本页保留维护者的个人 Magpie 路由示例及历史验证记录。安装脚本不会自动安装其中的代理或路由；使用前请自行检查本人的环境、已加载代理、凭据和路由是否适用。通用安装见 [README](../../README.md#快速开始)。
 
-链路为 **Claude Code → Magpie → 各上游**。上游登录与模型 routes 统一在 Magpie UI 管理；这是路由说明，不是可导入的配置 schema。
+请求路径示例为 **Claude Code → Magpie → 各上游**。上游登录与模型 routes 在 Magpie UI 管理；下表保留个人示例，不代表当前本机已配置，也不是可导入的配置 schema。
 
 在 Magpie UI 中配置 Codex、GLM 以及所需上游。若使用 `opencode-go` provider，接口类型为 Anthropic，endpoint 为 `https://opencode.ai/zen/go`，启用模型 `claude-haiku-5-5` 与 `deepseek-flash`；Messages 请求最终地址为 `https://opencode.ai/zen/go/v1/messages`。
 
@@ -13,12 +13,11 @@
 | `gpt-6.1-terra` | `codex/gpt-6.1-terra:max` | `codex/gpt-6.1-terra:max` | max |
 | `glm-5.3` | `zcode/glm-5.3` | `zcode/glm-5.3[1m]` | max |
 | `glm-5.3-flash` | `zcode/glm-5.3-flash` | `zcode/glm-5.3-flash[1m]` | max |
-| `minimax-m3.1-flash-free` | `group/minimax-m3.1-flash-free:max` | `group/minimax-m3.1-flash-free:max[1m]` | max |
 | `deepseek-v4.1-flash-free` | `group/deepseek-v4.1-flash-free:max` | `group/deepseek-v4.1-flash-free:max[1m]` | max |
 | `deepseek-v4.1-flash` | `group/deepseek-v4.1-flash:max` | `group/deepseek-v4.1-flash:max[1m]` | max |
 | `gemini-3.8-flash`（可选） | `commandcode/google/gemini-3.8-flash` | `commandcode/google/gemini-3.8-flash` | max |
 
-具名子代理中 Sol 与 Astra 默认 `xhigh`，其余默认 `max`，不按 effort 拆分代理。GPT、DeepSeek（含两个 free 档）与 MiniMax 使用冒号 effort，GLM 使用 zcode 限定名以避免默认/粘滞渠道错选。`[1m]` 是 Claude Code 的窗口声明，由客户端剥离，不属于 Magpie 请求 route；`codex/gpt-6.1-sol:xhigh`、`codex/gpt-6-astra:xhigh` 与 `codex/gpt-6.1-terra:max` 无 `[1m]`，Terra 的窗口以官方 Codex 默认 500000 / max 872000（API 总上下文 1050000）记录在 token-speed registry，不通过 `[1m]` 声明。Gemini 路由对外提供多档 effort；agent 默认声明 `max`，该档位已随子代理实际调用验证可用，未核验其在各上游的最终映射细节。窗口、压缩与输出上限参数的区别与排查见 [references/third-party-context.md](../../skills/multi-model-orchestration/references/third-party-context.md)。
+具名子代理中 Sol 与 Astra 默认 `xhigh`，其余默认 `max`，不按 effort 拆分代理。GPT 与 DeepSeek（含 free 档）使用冒号 effort，GLM 使用 zcode 限定名以避免默认/粘滞渠道错选。`[1m]` 是 Claude Code 的窗口声明，由客户端剥离，不属于 Magpie 请求 route；`codex/gpt-6.1-sol:xhigh`、`codex/gpt-6-astra:xhigh` 与 `codex/gpt-6.1-terra:max` 无 `[1m]`，Terra 的窗口以官方 Codex 默认 500000 / max 872000（API 总上下文 1050000）记录在 token-speed registry，不通过 `[1m]` 声明。Gemini 路由对外提供多档 effort；agent 默认声明 `max`，该档位已随子代理实际调用验证可用，未核验其在各上游的最终映射细节。窗口、压缩与输出上限参数的区别与排查见 [references/third-party-context.md](../../skills/multi-model-orchestration/references/third-party-context.md)。
 
 ## 验证记录（2026-10-27）
 
@@ -45,7 +44,7 @@
 
 历史观察：短请求工具往返成功不能证明完整 CLI 兼容；Haiku 聚合子代理实际 CLI 调用曾报 Command Code `Invalid input at messages.1.role`（会话内 `system` 被该渠道拒绝），待 Magpie 提供兼容回退或上游支持。
 
-**Gemini（可选）：** 使用 `commandcode` provider，需在 Magpie UI 中配置凭据与 route；仓库不包含用户凭据。该路由已完成连通与工具调用验证。未配置时 `gemini-3.8-flash` 子代理不可用，不影响其余 8 个核心 agent。Gemini 上游单次输出上限最高 65536，若 `CLAUDE_CODE_MAX_OUTPUT_TOKENS` 设置更高会报 400，需在该会话内临时设 `CLAUDE_CODE_MAX_OUTPUT_TOKENS=65536`（如 `claude --settings '{"env":{"CLAUDE_CODE_MAX_OUTPUT_TOKENS":"65536"}}'`），否则会报 400；该覆盖对整个会话的所有模型生效，只影响单次输出上限。
+**Gemini（可选）：** 使用 `commandcode` provider，需在 Magpie UI 中配置凭据与 route；仓库不包含用户凭据。该路由已完成连通与工具调用验证。未配置时 `gemini-3.8-flash` 子代理不可用，不影响其余 7 个核心 agent。Gemini 上游单次输出上限最高 65536，若 `CLAUDE_CODE_MAX_OUTPUT_TOKENS` 设置更高会报 400，需在该会话内临时设 `CLAUDE_CODE_MAX_OUTPUT_TOKENS=65536`（如 `claude --settings '{"env":{"CLAUDE_CODE_MAX_OUTPUT_TOKENS":"65536"}}'`），否则会报 400；该覆盖对整个会话的所有模型生效，只影响单次输出上限。
 
 ## 验证记录（2026-10-14）
 
@@ -53,4 +52,4 @@
 - Magpie 转发日志：入口 effort 为 max，实际 `tries` 为 effort=xhigh / fixed=xhigh，status 200，served 为真实 `gpt-6.1-sol`；route 后缀 `:xhigh` 固定覆盖了传入的 max，以 `tries` 为准。
 - 边界：这是最小固定回复冒烟，未做工具往返，不是能力评测；只覆盖 Sol，Astra 与其余代理仍为 `max`，未测 xhigh。
 
-安装 agents 与接入检查见 [README](../../README.md#快速开始)。
+通用安装与自行配置说明见 [README](../../README.md#快速开始)。

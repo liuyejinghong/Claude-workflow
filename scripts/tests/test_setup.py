@@ -70,24 +70,16 @@ class SetupContractTests(unittest.TestCase):
         rendered = SETUP.render_agent(assets["worker"], {"model": model}).decode()
         values = SETUP.frontmatter_scalars(rendered.encode())
         self.assertEqual(values["model"], model)
-        self.assertEqual(values["effort"], "max")
+        self.assertNotIn("effort", values)
         self.assertNotIn(":max", rendered)
 
-    def test_role_recommendation_schema_and_rejections(self):
+    def test_role_asset_schema_excludes_model_metadata(self):
         assets = SETUP.load_assets()
         for role, asset in assets.items():
-            recommendations = asset["recommended_models"]
-            self.assertTrue(isinstance(recommendations, list) and recommendations)
-            models = [item["model"] for item in recommendations]
-            self.assertEqual(len(models), len(set(models)))
-            for item in recommendations:
-                self.assertEqual(set(item), {"model", "reason", "effort"})
-                self.assertTrue(SETUP.valid_model(item["model"]))
-                self.assertTrue(SETUP.valid_recommendation_reason(item["reason"]))
-                self.assertIn(item["effort"], SETUP.EFFORT_LEVELS)
-            text = json.dumps(recommendations, ensure_ascii=False)
-            self.assertNotIn(":max", text)
-            self.assertNotIn("[1m]", text)
+            expected = {"name", "description", "body"}
+            if role == "editor":
+                expected.add("tools")
+            self.assertEqual(set(asset), expected)
 
         def mutate(mutator):
             broken = copy.deepcopy(assets)
@@ -95,101 +87,132 @@ class SetupContractTests(unittest.TestCase):
             return broken
 
         bad = [
-            mutate(lambda a: a["worker"].pop("recommended_models")),
             mutate(lambda a: a["worker"].update(recommended_models=[])),
-            mutate(lambda a: a["worker"].update(recommended_models="glm-5.3")),
-            mutate(lambda a: a["worker"].update(recommended_models=["glm-5.3"])),
-            mutate(lambda a: a["worker"].update(recommended_models=[{"reason": "missing model"}])),
-            mutate(lambda a: a["worker"].update(recommended_models=[{"model": "glm-5.3"}])),
-            mutate(lambda a: a["worker"].update(recommended_models=[{"model": "glm-5.3", "reason": "missing effort"}])),
-            mutate(lambda a: a["worker"].update(recommended_models=[{"model": "glm-5.3", "reason": "ok", "effort": "high"}])),
-            mutate(lambda a: a["worker"].update(recommended_models=[{"model": "glm-5.3", "reason": "ok", "effort": "MAX"}])),
-            mutate(lambda a: a["worker"].update(recommended_models=[{"model": "glm-5.3", "reason": "ok", "effort": "max "}])),
-            mutate(lambda a: a["worker"].update(recommended_models=[{"model": "glm-5.3", "reason": "ok", "effort": None}])),
-            mutate(lambda a: a["worker"].update(recommended_models=[{"model": "glm-5.3", "reason": "ok", "tier": 1}])),
-            mutate(lambda a: a["worker"].update(recommended_models=[{"model": "glm 5.3", "reason": "space in id", "effort": "max"}])),
-            mutate(lambda a: a["worker"].update(recommended_models=[{"model": "glm-5.3", "reason": "", "effort": "max"}])),
-            mutate(lambda a: a["worker"].update(recommended_models=[{"model": "glm-5.3", "reason": " padded ", "effort": "max"}])),
-            mutate(lambda a: a["worker"].update(recommended_models=[{"model": "glm-5.3", "reason": "line\nbreak", "effort": "max"}])),
-            mutate(lambda a: a["worker"]["recommended_models"].append(dict(assets["worker"]["recommended_models"][0]))),
+            mutate(lambda a: a["worker"].update(model="example-model")),
+            mutate(lambda a: a["worker"].update(effort="max")),
+            mutate(lambda a: a["worker"].update(priority=1)),
+            mutate(lambda a: a["worker"].update(name="wrong-name")),
+            mutate(lambda a: a["worker"].update(description="")),
+            mutate(lambda a: a["worker"].update(body="  ")),
+            mutate(lambda a: a["worker"].update(tools=[])),
+            mutate(lambda a: a["worker"].update(tools=["Read", "Read"])),
+            mutate(lambda a: a["worker"].update(tools=["invalid tool"])),
+            mutate(lambda a: a["editor"].pop("tools")),
+            mutate(lambda a: a["editor"].update(tools=["Read", "Bash"])),
+            mutate(lambda a: a.pop("worker")),
+            mutate(lambda a: a.update(extra={})),
         ]
         for broken in bad:
-            label = json.dumps(broken["worker"].get("recommended_models"), ensure_ascii=False)
-            with self.subTest(recommendations=label):
+            with self.subTest(asset=broken):
                 with self.assertRaises(SETUP.SetupError):
                     SETUP.validate_assets(broken)
 
-    def test_recommendations_preserve_model_task_boundaries(self):
-        assets = SETUP.load_assets()
-        for asset in assets.values():
-            self.assertNotIn("claude-haiku-5-5",
-                             [item["model"] for item in asset["recommended_models"]])
-        worker = assets["worker"]["recommended_models"]
-        self.assertEqual([item["model"] for item in worker],
-                         ["glm-5.3", "glm-5.3-flash"])
-        worker_reasons = {item["model"]: item["reason"] for item in worker}
-        self.assertIn("质量优先", worker_reasons["glm-5.3-flash"])
-        self.assertIn("编码", worker_reasons["glm-5.3-flash"])
-        reviewer_reasons = {item["model"]: item["reason"]
-                            for item in assets["reviewer"]["recommended_models"]}
-        self.assertEqual(set(reviewer_reasons), {"gpt-6.1-sol", "gpt-6-astra"})
-        self.assertNotEqual(reviewer_reasons["gpt-6.1-sol"], reviewer_reasons["gpt-6-astra"])
-        self.assertIn("独立第二意见", reviewer_reasons["gpt-6-astra"])
-        researcher = assets["researcher"]["recommended_models"]
-        self.assertEqual([item["model"] for item in researcher], ["deepseek-v4.1-flash"])
-        ds_reason = researcher[0]["reason"]
-        self.assertIn("取证", ds_reason)
-        for role, asset in assets.items():
-            for item in asset["recommended_models"]:
-                self.assertEqual(item["effort"],
-                                 "xhigh" if item["model"] in ("gpt-6.1-sol", "gpt-6-astra") else "max")
-        reviewer_efforts = {item["model"]: item["effort"]
-                            for item in assets["reviewer"]["recommended_models"]}
-        self.assertEqual(reviewer_efforts["gpt-6-astra"], "xhigh")
-        self.assertEqual(SETUP.resolved_effort(assets["reviewer"], {"model": "gpt-6-astra"}), "xhigh")
-
-    def test_resolved_effort_consistent_across_render_table_summary_and_verify(self):
+    def test_effort_consistent_across_render_table_summary_and_verify(self):
         plan = {"roles": {
             "engineer": {"model": "gpt-6.1-sol"},
             "reviewer": {"model": "vendor/sol:custom", "effort": "xhigh"},
             "worker": {"model": "inherit"},
-            "researcher": {"model": "vendor/research:custom"},
+            "researcher": {"model": "vendor/research:custom", "effort": "max"},
         }}
         assets = SETUP.load_assets()
         _targets, summary = SETUP.prepare(plan, self.config)
         by_role = {row["role"]: row for row in summary["configuration_table"]}
-        self.assertEqual(by_role["engineer"]["effort"], "xhigh")
+        self.assertIsNone(by_role["engineer"]["effort"])
         self.assertEqual(by_role["reviewer"]["effort"], "xhigh")
-        self.assertEqual(by_role["worker"]["effort"], "max")
+        self.assertIsNone(by_role["worker"]["effort"])
         self.assertEqual(by_role["researcher"]["effort"], "max")
         agents = {agent["role"]: agent for agent in summary["agents"]}
         for role, binding in plan["roles"].items():
             rendered = SETUP.render_agent(assets[role], binding).decode()
             values = SETUP.frontmatter_scalars(rendered.encode())
-            self.assertEqual(values["effort"], by_role[role]["effort"])
+            self.assertEqual(values.get("effort"), by_role[role]["effort"])
+            self.assertEqual("effort" in values, "effort" in binding)
             self.assertEqual(agents[role]["effort"], by_role[role]["effort"])
             self.assertEqual(values["model"], binding["model"])
             self.assertNotIn(binding["model"] + ":xhigh", rendered)
+        self.assertIn("inherits runtime settings", " ".join(summary["notes"]))
         SETUP.apply_plan(plan, self.config)
-        efforts = {agent["name"]: agent["effort"] for agent in SETUP.verify(self.config)["agents"]}
-        self.assertEqual(efforts["workflow-engineer"], "xhigh")
+        verified = SETUP.verify(self.config)
+        efforts = {agent["name"]: agent["effort"] for agent in verified["agents"]}
+        self.assertIsNone(efforts["workflow-engineer"])
         self.assertEqual(efforts["workflow-reviewer"], "xhigh")
-        self.assertEqual(efforts["workflow-worker"], "max")
+        self.assertIsNone(efforts["workflow-worker"])
         self.assertEqual(efforts["workflow-researcher"], "max")
+        self.assertIn("inherits runtime settings", " ".join(verified["notes"]))
 
-    def test_recommendations_never_written_into_agent_definitions(self):
+    def test_generated_definition_preserves_only_explicit_model(self):
         plan = {"roles": {"worker": {"model": "vendor/exact:route[1m]", "notes": "keep exact id"}}}
         assets = SETUP.load_assets()
         rendered = SETUP.render_agent(assets["worker"], plan["roles"]["worker"]).decode()
         self.assertNotIn("recommended_models", rendered)
-        for item in assets["worker"]["recommended_models"]:
-            self.assertNotIn(item["model"], rendered)
         SETUP.apply_plan(plan, self.config)
         data = (self.config / "agents" / "workflow-worker.md").read_text()
         self.assertNotIn("recommended_models", data)
-        for item in assets["worker"]["recommended_models"]:
-            self.assertNotIn(item["model"], data)
         self.assertEqual(SETUP.frontmatter_scalars(data.encode())["model"], "vendor/exact:route[1m]")
+
+    def test_verify_accepts_common_frontmatter_keys_and_optional_effort(self):
+        SETUP.apply_plan({"roles": {"worker": {"model": "inherit"}}}, self.config)
+        path = self.config / "agents" / "workflow-worker.md"
+        without_effort = path.read_text()
+        self.assertIsNone(SETUP.verify(self.config)["agents"][0]["effort"])
+        for effort in ("xhigh", "max"):
+            original = without_effort.replace("\n---\n\n", f"\neffort: {effort}\n---\n\n", 1)
+            for key in ("name", "description", "model", "effort"):
+                for quote in ("", "'", '"'):
+                    for space in ("", " ", "\t"):
+                        with self.subTest(effort=effort, key=key, quote=quote, space=space):
+                            path.write_text(original.replace(f"\n{key}:", f"\n{quote}{key}{quote}{space}:", 1))
+                            agent = SETUP.verify(self.config)["agents"][0]
+                            self.assertEqual(agent["name"], "workflow-worker")
+                            self.assertEqual(agent["model"], "inherit")
+                            self.assertEqual(agent["effort"], effort)
+
+    def test_verify_rejects_invalid_effort_with_common_keys(self):
+        SETUP.apply_plan({"roles": {"worker": {"model": "inherit", "effort": "max"}}}, self.config)
+        path = self.config / "agents" / "workflow-worker.md"
+        original = path.read_text()
+        for quote in ("", "'", '"'):
+            for space in ("", " ", "\t"):
+                for value in ("high", "", "[max]", "{value: max}", "|", "null"):
+                    with self.subTest(quote=quote, space=space, value=value):
+                        path.write_text(original.replace("effort: max", f"{quote}effort{quote}{space}: {value}"))
+                        with self.assertRaisesRegex(SETUP.SetupError, "effort"):
+                            SETUP.verify(self.config)
+
+    def test_verify_rejects_duplicate_keys_across_common_spellings(self):
+        SETUP.apply_plan({"roles": {"worker": {"model": "inherit", "effort": "xhigh"}}}, self.config)
+        path = self.config / "agents" / "workflow-worker.md"
+        original = path.read_text()
+        for key in ("name", "description", "model", "effort"):
+            for first, second in ((key, f'"{key}"'), (f"'{key}'", key), (f'"{key}"', f"'{key}'")):
+                with self.subTest(key=key, first=first, second=second):
+                    lines = original.splitlines()
+                    for index, line in enumerate(lines):
+                        if line.startswith(key + ":"):
+                            value = line[len(key) + 1:]
+                            lines[index:index + 1] = [f"{first} :{value}", f"{second}\t:{value}"]
+                            break
+                    path.write_text("\n".join(lines) + "\n")
+                    with self.assertRaisesRegex(SETUP.SetupError, "duplicate scalar field"):
+                        SETUP.verify(self.config)
+
+        for first, second in (("description: |", '"description": valid'),
+                              ('"model": []', "model: inherit"),
+                              ("'effort': {}", "effort: max")):
+            with self.subTest(first=first, second=second):
+                data = f"---\n{first}\n{second}\n---\n".encode()
+                with self.assertRaisesRegex(SETUP.SetupError, "duplicate scalar field"):
+                    SETUP.frontmatter_scalars(data)
+
+    def test_verify_rejects_invalid_explicit_effort(self):
+        SETUP.apply_plan({"roles": {"worker": {"model": "inherit", "effort": "max"}}}, self.config)
+        path = self.config / "agents" / "workflow-worker.md"
+        original = path.read_text()
+        for value in ("high", "", "[max]", "{value: max}", "|", "null"):
+            with self.subTest(value=value):
+                path.write_text(original.replace("effort: max", "effort: " + value))
+                with self.assertRaisesRegex(SETUP.SetupError, "effort"):
+                    SETUP.verify(self.config)
 
     def test_configuration_table_complete_and_exact_routes(self):
         plan = {"roles": {"worker": {"model": "vendor/exact:route[1m]"},
@@ -200,7 +223,7 @@ class SetupContractTests(unittest.TestCase):
         by_role = {row["role"]: row for row in table}
         self.assertEqual(by_role["worker"]["model"], "vendor/exact:route[1m]")
         self.assertEqual(by_role["worker"]["status"], "selected")
-        self.assertEqual(by_role["worker"]["effort"], "max")
+        self.assertIsNone(by_role["worker"]["effort"])
         self.assertIsNone(by_role["worker"]["notes"])
         self.assertEqual(by_role["editor"]["model"], "claude-haiku-5-5")
         self.assertEqual(by_role["editor"]["notes"], "user-confirmed note")
@@ -212,11 +235,11 @@ class SetupContractTests(unittest.TestCase):
             self.assertIsNone(row["notes"])
             self.assertEqual(row["name"], "workflow-" + role)
             self.assertTrue(row["description"])
-            self.assertTrue(row["recommended_models"])
+            self.assertNotIn("recommended_models", row)
         worker_agent = next(agent for agent in summary["agents"] if agent["role"] == "worker")
-        self.assertEqual(worker_agent["recommended_models"], by_role["worker"]["recommended_models"])
+        self.assertNotIn("recommended_models", worker_agent)
         self.assertEqual(worker_agent["model"], "vendor/exact:route[1m]")
-        self.assertIn("availability list", " ".join(summary["notes"]))
+        self.assertIn("remain unverified", " ".join(summary["notes"]))
 
     def test_quoted_frontmatter_comments_preserve_exact_scalars(self):
         cases = (
@@ -345,12 +368,10 @@ class SetupContractTests(unittest.TestCase):
         with self.assertRaises(SETUP.SetupError):
             SETUP.scan(self.config, self.project, claude_models_available="partial")
 
-    def test_claude_candidates_and_recommendations_never_auto_confirm(self):
-        assets = SETUP.load_assets()
-        advertised = [item["model"] for asset in assets.values() for item in asset["recommended_models"]]
+    def test_claude_candidates_never_auto_confirm(self):
         self.put_json(self.config / "settings.json",
                       {"model": "claude-opus-5-5", "availableModels": ["claude-sonnet-5-5", "claude-haiku-5-5"]})
-        models_json = self.put_json(self.root / "models.json", advertised + ["claude-opus-5-5"])
+        models_json = self.put_json(self.root / "models.json", ["example-advertised-model", "claude-opus-5-5"])
         result = SETUP.scan(self.config, self.project, models_json=models_json)
         advice = result["installation_advice"]
         self.assertEqual(advice["recommendation"], "configure-roles")
@@ -359,7 +380,7 @@ class SetupContractTests(unittest.TestCase):
         ids = {entry["id"] for entry in result["candidates"]}
         self.assertIn("claude-opus-5-5", ids)
         self.assertIn("inherit", ids)
-        self.assertIn("glm-5.3", ids)
+        self.assertIn("example-advertised-model", ids)
 
     def test_scan_cli_advice_flags_readonly_and_safe(self):
         secret = "ADVICE_SCAN_PRIVATE"
@@ -402,10 +423,10 @@ class SetupContractTests(unittest.TestCase):
         worker = table[0]
         self.assertEqual(worker["status"], "selected")
         self.assertEqual(worker["model"], "custom/exact:limit")
-        self.assertEqual(worker["effort"], "max")
+        self.assertIsNone(worker["effort"])
         self.assertEqual({row["status"] for row in table[1:]}, {"skipped"})
-        self.assertTrue(all(row["recommended_models"] for row in table))
-        self.assertIn("availability list", " ".join(output["notes"]))
+        self.assertTrue(all("recommended_models" not in row for row in table))
+        self.assertIn("remain unverified", " ".join(output["notes"]))
 
     def test_local_query_only_get_and_redirect_refused(self):
         requests = []
@@ -549,6 +570,23 @@ class SetupContractTests(unittest.TestCase):
         self.assertTrue(backup.exists())
         self.assertEqual(SETUP.apply_plan({"always_delegate": False}, self.config)["written"], [])
         self.assertEqual(claude_path.read_bytes().count(rule), 1)
+
+    def test_empty_plan_preserves_existing_configuration_and_agents(self):
+        self.put_json(self.config / "orchestration.json", {"version": 1, "roles": {
+            "worker": {"candidates": [{"agent": "custom-worker", "priority": 2}]}}})
+        self.put_json(self.config / "settings.json", {"model": "personal-route", "keep": True})
+        (self.config / "CLAUDE.md").write_text("custom instruction\n")
+        for name in ("workflow-worker.md", "custom-worker.md", "haiku-5.5-max.md"):
+            path = self.config / "agents" / name
+            path.parent.mkdir(exist_ok=True)
+            path.write_text("user-owned " + name)
+        before = self.fingerprints()
+        targets, preview = SETUP.prepare({}, self.config)
+        self.assertEqual(targets, [])
+        self.assertEqual(preview["agents"], [])
+        self.assertTrue(all(row["status"] == "skipped" for row in preview["configuration_table"]))
+        self.assertEqual(SETUP.apply_plan({}, self.config)["written"], [])
+        self.assertEqual(self.fingerprints(), before)
 
     def test_new_settings_private_and_empty_plan_no_writes(self):
         self.assertEqual(SETUP.apply_plan({}, self.config)["written"], [])
@@ -1082,6 +1120,11 @@ class SetupContractTests(unittest.TestCase):
             self.assertIn(command, result.stdout)
         result = self.command("preview", "--help")
         self.assertIn("Plan schema/example", result.stdout)
+        self.assertIn("example-worker", result.stdout)
+        self.assertIn("placeholders, not confirmed available agents", result.stdout)
+        self.assertNotIn("deepseek-v4.1-flash", result.stdout)
+        self.assertNotIn("gpt-6.1-sol", result.stdout)
+        self.assertIn("field is omitted to inherit runtime settings", result.stdout)
         result = self.command("scan", "--bad-flag")
         self.assertEqual(result.returncode, 2)
         invalid = self.root / "invalid.json"

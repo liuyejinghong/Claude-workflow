@@ -4,7 +4,13 @@
 
 ## Unreleased
 
-- 个人预设新增 Terra worker 示例 `gpt-6.1-terra`（`examples/magpie/agents/gpt-6.1-terra.md`，路由 `codex/gpt-6.1-terra:max`，effort `max`）：主控已定方案下的常规实现、已知根因修复、测试、保持行为重构与取证；根因、架构与高风险实施决策及最终验收仍在主控与 Sol。worker 角色卡中排 priority 5，排在既有候选之后。preset 示例数由 8 增至 9，`install.sh`、安装入口合同测试、Magpie 示例与安装参考同步；不改变根 `VERSION`。
+## 0.7.0 - 2026-11-01
+
+- 默认安装只提供五岗职责和 skill，不自动创建代理或角色卡。个人模型、顺序和 effort 不再预置，只在用户显式确认后配置。
+- 旧安装入口 `--preset` 已停用，使用时会报错且不写入文件。已有用户配置和代理不会自动改动。
+- 未显式指定 effort 时，新生成的代理省略该字段；已有代理保留原有 effort。
+- 移除不可用的 `minimax-m3.1-flash-free` 示例。派发时按当前角色卡选型。
+- 个人示例新增 Terra worker `gpt-6.1-terra`（`examples/magpie/agents/gpt-6.1-terra.md`，路由 `codex/gpt-6.1-terra:max`，effort `max`）。在主控已定方案下，Terra 承担常规实现、已知根因修复、测试、保持行为重构与取证。根因、架构、高风险实施决策及最终验收仍在主控与 Sol。个人角色卡的 worker 岗位中，Terra 的 priority 为 5，排在既有候选之后。
 
 ## Mod 发布：token-speed 0.6.0 - 2026-10-28
 

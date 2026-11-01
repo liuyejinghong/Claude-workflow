@@ -2,8 +2,8 @@
 """根入口合同测试：install.sh 与 scripts/verify.sh。
 
 覆盖合同 Agreed architecture 第 1 条与 Root verify.sh：
-- 默认只安装完整 skill（不写 agents/settings/CLAUDE.md），--preset 才装 9 个示例 agent
-  并迁移 haiku-5.5-max.md；唯一备份绝不覆盖既有 .bak；参数错误零副作用；符号链接目标拒绝。
+- 默认只安装完整 skill（不写 agents/settings/CLAUDE.md/角色卡）；--preset 明确失败且不写入。
+  唯一备份绝不覆盖既有 .bak；参数错误零副作用；符号链接目标拒绝。
 - verify.sh 默认委托已安装 skill 的 scripts/setup.py verify --config-dir；--models 走
   scan --query-models；--smoke 必须显式 SMOKE_MODEL，恰好两轮工具往返、不先 GET 模型列表、
   只剥离客户端 [1m]、保留 :max、严格 2xx（重定向失败）、不泄露 key 或响应体。
@@ -29,7 +29,6 @@ REPO = Path(__file__).resolve().parents[2]
 INSTALL = REPO / "install.sh"
 VERIFY = REPO / "scripts" / "verify.sh"
 SOURCE_SKILL = REPO / "skills" / "multi-model-orchestration"
-SOURCE_AGENTS = REPO / "examples" / "magpie" / "agents"
 
 _TEMP_DIRS = []
 
@@ -273,7 +272,11 @@ class InstallEntrypoints(unittest.TestCase):
         (claude / "templates" / "keep.md").write_text("template sentinel\n", encoding="utf-8")
         (claude / "settings.json").write_text('{"keep": true}\n', encoding="utf-8")
         (claude / "agents").mkdir()
-        (claude / "agents" / "custom.md").write_text("custom agent sentinel\n", encoding="utf-8")
+        for filename in ("custom.md", "haiku-5.5-max.md", "glm-5.3.md",
+                         "deepseek-v4.1-flash-free.md", "minimax-m3.1-flash-free.md"):
+            (claude / "agents" / filename).write_text("user-owned " + filename + "\n", encoding="utf-8")
+        agents_before = tree_snapshot(claude / "agents")
+        (claude / "orchestration.json").write_text('{"version":1,"roles":{}}\n', encoding="utf-8")
         (claude / "CLAUDE.md").write_text("claude md sentinel\n", encoding="utf-8")
         (home / ".claude").mkdir(parents=True)
 
@@ -283,12 +286,17 @@ class InstallEntrypoints(unittest.TestCase):
         target_skill = claude / "skills" / "multi-model-orchestration"
         self.assertTrue((target_skill / "SKILL.md").is_file())
         self.assertEqual(tree_snapshot(SOURCE_SKILL), tree_snapshot(target_skill))
+        roles = json.loads((target_skill / "assets" / "roles.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(roles), {"worker", "engineer", "reviewer", "researcher", "editor"})
+        for role, asset in roles.items():
+            self.assertEqual(set(asset), {"name", "description", "body", "tools"} if role == "editor"
+                             else {"name", "description", "body"})
 
         self.assertEqual((claude / "templates" / "keep.md").read_text(encoding="utf-8"), "template sentinel\n")
         self.assertEqual((claude / "settings.json").read_text(encoding="utf-8"), '{"keep": true}\n')
-        self.assertEqual((claude / "agents" / "custom.md").read_text(encoding="utf-8"), "custom agent sentinel\n")
+        self.assertEqual(tree_snapshot(claude / "agents"), agents_before)
+        self.assertEqual((claude / "orchestration.json").read_text(encoding="utf-8"), '{"version":1,"roles":{}}\n')
         self.assertEqual((claude / "CLAUDE.md").read_text(encoding="utf-8"), "claude md sentinel\n")
-        self.assertEqual(sorted(p.name for p in (claude / "agents").iterdir()), ["custom.md"])
         self.assertFalse((claude / "settings.local.json").exists())
         self.assertEqual(list((home / ".claude").iterdir()), [])
 
@@ -323,7 +331,23 @@ class InstallEntrypoints(unittest.TestCase):
         self.assertEqual([card["role"] for card in output["roles"]],
                          ["worker", "engineer", "reviewer", "researcher", "editor"])
         self.assertEqual(tree_snapshot(claude), before)
+        self.assertEqual({path.name for path in claude.iterdir()}, {"skills"})
         self.assertFalse((claude / "orchestration.json").exists())
+
+        plan = sandbox / "empty-plan.json"
+        plan.write_text("{}", encoding="utf-8")
+        for command in ("preview", "apply"):
+            proc = helper_command(command, "--plan", plan)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            result = json.loads(proc.stdout)
+            self.assertEqual(result["agents"], [])
+            self.assertEqual(result["targets"], [])
+            self.assertTrue(all(row["status"] == "skipped" for row in result["configuration_table"]))
+            self.assertEqual(tree_snapshot(claude), before)
+        proc = helper_command("verify")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["agents"], [])
+        self.assertEqual(tree_snapshot(claude), before)
 
         configuration = {"version": 1, "roles": {
             "worker": {"candidates": [{"agent": "plugin:existing-worker", "priority": 1}]},
@@ -365,7 +389,7 @@ class InstallEntrypoints(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertTrue((cfg / "skills" / "multi-model-orchestration" / "SKILL.md").is_file())
         self.assertFalse((home / ".claude").exists())
-        for absent in ("agents", "settings.json", "CLAUDE.md", "templates"):
+        for absent in ("agents", "settings.json", "CLAUDE.md", "templates", "orchestration.json"):
             self.assertFalse((cfg / absent).exists(), absent)
 
         preferred = sandbox / "preferred"
@@ -450,7 +474,7 @@ class InstallEntrypoints(unittest.TestCase):
                 else:
                     backup_root.write_text("backup root sentinel\n", encoding="utf-8")
                 before = tree_snapshot(sandbox)
-                proc = run_install(["--preset"], {"CLAUDE_HOME": str(claude), "HOME": str(home)})
+                proc = run_install([], {"CLAUDE_HOME": str(claude), "HOME": str(home)})
                 self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
                 self.assertIn("skill 备份根目录", proc.stderr)
                 self.assertEqual(tree_snapshot(sandbox), before, "预检失败不得创建 skills、agents 或备份")
@@ -485,7 +509,7 @@ class InstallEntrypoints(unittest.TestCase):
         self.assertEqual(len(list(backup_root.glob("install-*"))), 1)
         self.assertEqual(list(backup_root.rglob("SKILL.md")), [], "还原后备份已移回原目标")
 
-    def test_preset_agents_migration_and_unrelated_files_preserved(self):
+    def test_preset_rejected_without_writes_for_existing_or_absent_config(self):
         sandbox = make_sandbox("preset")
         claude = sandbox / "claude"
         home = sandbox / "home"
@@ -496,37 +520,21 @@ class InstallEntrypoints(unittest.TestCase):
         (agents / "haiku-5.5-max.md").write_text("legacy alias sentinel\n", encoding="utf-8")
         (agents / "haiku-5.5-max.md.bak").write_text("older bak sentinel\n", encoding="utf-8")
         (agents / "glm-5.3.md").write_text("old glm content\n", encoding="utf-8")
-        settings = claude / "settings.json"
-        settings.write_text('{"keep": true}\n', encoding="utf-8")
-
-        proc = run_install(["--preset"], {"CLAUDE_HOME": str(claude), "HOME": str(home)})
-        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-
-        source_names = sorted(p.name for p in SOURCE_AGENTS.glob("*.md"))
-        self.assertEqual(len(source_names), 9)
-        for name in source_names:
-            self.assertEqual((agents / name).read_bytes(), (SOURCE_AGENTS / name).read_bytes(), name)
-        self.assertFalse((agents / "haiku-5.5.md").exists(), "preset 不得创建 haiku-5.5.md")
-        for free_name in ("minimax-m3.1-flash-free.md", "deepseek-v4.1-flash-free.md"):
-            self.assertIn(free_name, source_names, "preset 收录两个 free 档 agent 定义")
-            self.assertTrue((agents / free_name).is_file(), free_name)
-
-        self.assertFalse((agents / "haiku-5.5-max.md").exists())
-        migrated = [p for p in agents.iterdir() if p.name.startswith("haiku-5.5-max.md.bak.")]
-        self.assertEqual(len(migrated), 1)
-        self.assertEqual(migrated[0].read_text(encoding="utf-8"), "legacy alias sentinel\n")
-        self.assertEqual((agents / "haiku-5.5-max.md.bak").read_text(encoding="utf-8"), "older bak sentinel\n")
-        self.assertEqual((agents / "custom.md").read_text(encoding="utf-8"), "custom sentinel\n")
-
-        replaced = [p for p in agents.iterdir() if p.name.startswith("glm-5.3.md.bak.")]
-        self.assertEqual(len(replaced), 1)
-        self.assertEqual(replaced[0].read_text(encoding="utf-8"), "old glm content\n")
-
-        self.assertEqual(settings.read_text(encoding="utf-8"), '{"keep": true}\n')
-        self.assertFalse((claude / "CLAUDE.md").exists())
-        self.assertTrue((claude / "skills" / "multi-model-orchestration" / "SKILL.md").is_file())
-        self.assertIn("/multi-model-orchestration install", proc.stdout)
-        self.assertEqual(proc.stdout.count("agent  →"), 9)
+        (claude / "settings.json").write_text('{"keep": true}\n', encoding="utf-8")
+        (claude / "orchestration.json").write_text('{"version":1,"roles":{}}\n', encoding="utf-8")
+        before = tree_snapshot(sandbox)
+        for args in (["--preset"], ["--preset", "--help"], ["--help", "--preset"]):
+            with self.subTest(args=args):
+                proc = run_install(args, {"CLAUDE_HOME": str(claude), "HOME": str(home)})
+                self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+                self.assertIn("--preset 已停用", proc.stderr)
+                self.assertIn("未写入任何文件", proc.stderr)
+                self.assertEqual(tree_snapshot(sandbox), before)
+        absent = sandbox / "absent-config"
+        proc = run_install(["--preset"], {"CLAUDE_HOME": str(absent), "HOME": str(home)})
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertFalse(absent.exists())
+        self.assertEqual(tree_snapshot(sandbox), before)
 
     def test_arg_errors_and_help_have_no_effect(self):
         sandbox = make_sandbox("args")
@@ -577,46 +585,29 @@ class InstallEntrypoints(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertEqual(list(real_claude.iterdir()), [])
 
-    def test_preset_preflight_blocks_before_any_write(self):
-        # 预检必须先于任何写入：agent 目标或旧 alias 类型异常时，连 skill 都不应被安装。
-        cases = ("agent target dir", "legacy alias dir")
-        for case in cases:
+    def test_default_ignores_existing_agent_target_types(self):
+        # 默认安装不访问 agent 目标，目录和符号链接必须原样保留。
+        for case in ("directory", "symlink"):
             with self.subTest(case=case):
-                sandbox = make_sandbox("preflight")
+                sandbox = make_sandbox("agents-untouched")
                 claude = sandbox / "claude"
                 home = sandbox / "home"
                 home.mkdir()
                 agents = claude / "agents"
                 agents.mkdir(parents=True)
-                if case == "agent target dir":
-                    (agents / "deepseek-v4.1-flash.md").mkdir()
+                target = agents / "deepseek-v4.1-flash.md"
+                if case == "directory":
+                    target.mkdir()
+                    (target / "keep").write_text("directory sentinel")
                 else:
-                    (agents / "haiku-5.5-max.md").mkdir()
-                proc = run_install(["--preset"], {"CLAUDE_HOME": str(claude), "HOME": str(home)})
-                self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
-                self.assertIn("不是普通文件", proc.stderr)
-                self.assertFalse((claude / "skills").exists(), "预检失败不得先安装 skill")
-                self.assertFalse((claude / "skills" / "multi-model-orchestration").exists())
-
-    def test_preset_runtime_failure_reports_partial_state(self):
-        # 预检通过后中途失败：必须如实报告 skill 已安装、agent 写入数量与备份位置。
-        sandbox = make_sandbox("partial")
-        claude = sandbox / "claude"
-        home = sandbox / "home"
-        home.mkdir()
-        agents = claude / "agents"
-        agents.mkdir(parents=True)
-        (agents / "deepseek-v4.1-flash.md").write_text("existing sentinel\n", encoding="utf-8")
-        os.chmod(agents, 0o500)
-        try:
-            proc = run_install(["--preset"], {"CLAUDE_HOME": str(claude), "HOME": str(home)})
-        finally:
-            os.chmod(agents, 0o700)
-        self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("安装不完整", proc.stderr)
-        self.assertIn("skill 已安装", proc.stderr)
-        self.assertTrue((claude / "skills" / "multi-model-orchestration" / "SKILL.md").is_file())
-        self.assertEqual((agents / "deepseek-v4.1-flash.md").read_text(encoding="utf-8"), "existing sentinel\n")
+                    outside = sandbox / "outside.md"
+                    outside.write_text("symlink sentinel")
+                    target.symlink_to(outside)
+                before = tree_snapshot(agents)
+                proc = run_install([], {"CLAUDE_HOME": str(claude), "HOME": str(home)})
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertEqual(tree_snapshot(agents), before)
+                self.assertTrue((claude / "skills" / "multi-model-orchestration" / "SKILL.md").is_file())
 
     def test_scripts_parse_under_selected_bash(self):
         self.assertIsNotNone(BASH_VERSION, "未找到可用的 bash")

@@ -24,8 +24,7 @@ EDITOR_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write"]
 CANONICAL_MODELS = frozenset({
     "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1",
 })
-# Deliberately finite: the only effort levels current model recommendations support;
-# plan bindings may explicitly choose either one.
+# Existing plan bindings may explicitly choose either supported effort level.
 EFFORT_LEVELS = ("xhigh", "max")
 MODEL_ENV = (
     "ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
@@ -61,10 +60,10 @@ PLAN_EXAMPLE = '''{
     "version": 1,
     "roles": {
       "worker": {
-        "candidates": [{"agent": "minimax-m3.1-flash-free", "priority": 1}]
+        "candidates": [{"agent": "example-worker", "priority": 1}]
       },
       "reviewer": {
-        "candidates": [{"agent": "gpt-6.1-sol", "priority": 1}]
+        "candidates": [{"agent": "example-reviewer", "priority": 1}]
       }
     }
   }
@@ -75,7 +74,6 @@ COMPAT_PLAN_EXAMPLE = '''{
     "reviewer": {"model": "exact-confirmed-id", "effort": "xhigh", "notes": "optional confirmed strength/limit"}
   },
   "context": {
-    "modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 200000}},
     "env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"}
   },
   "always_delegate": false
@@ -140,11 +138,6 @@ def load_json(path):
 def valid_model(value):
     return (isinstance(value, str) and 0 < len(value) <= 512
             and all(char.isprintable() and not char.isspace() for char in value))
-
-
-def valid_recommendation_reason(value):
-    return (isinstance(value, str) and 0 < len(value) <= 500
-            and value.isprintable() and value == value.strip())
 
 
 def check_keys(value, allowed, label):
@@ -262,10 +255,11 @@ def validate_assets(assets):
         raise SetupError("Role assets must contain exactly the five documented neutral roles: "
                          + ", ".join(ROLE_NAMES) + ".")
     for role, asset in assets.items():
-        check_keys(asset, ("name", "description", "body", "tools", "recommended_models"), f"Asset {role}")
+        check_keys(asset, ("name", "description", "body", "tools"), f"Asset {role}")
         if asset.get("name") != "workflow-" + role:
             raise SetupError(f"Asset {role} has an invalid generated name.")
-        if not isinstance(asset.get("description"), str) or not asset["description"].isprintable():
+        if (not isinstance(asset.get("description"), str) or not asset["description"].strip()
+                or not asset["description"].isprintable()):
             raise SetupError(f"Asset {role} requires a nonempty single-line description.")
         if not isinstance(asset.get("body"), str) or not asset["body"].strip():
             raise SetupError(f"Asset {role} requires a body.")
@@ -277,27 +271,6 @@ def validate_assets(assets):
                 raise SetupError(f"Asset {role} has an invalid tools list.")
         if role == "editor" and asset.get("tools") != EDITOR_TOOLS:
             raise SetupError("The editor asset must restrict tools to Read/Glob/Grep/Edit/Write.")
-        recommendations = asset.get("recommended_models")
-        if not isinstance(recommendations, list) or not recommendations:
-            raise SetupError(f"Asset {role} requires a nonempty recommended_models array.")
-        seen_models = set()
-        for index, item in enumerate(recommendations):
-            if not isinstance(item, dict) or set(item) != {"model", "reason", "effort"}:
-                raise SetupError(
-                    f"Asset {role} recommendation {index} must be an object containing exactly "
-                    "model, reason and effort.")
-            if not valid_model(item["model"]):
-                raise SetupError(f"Asset {role} recommendation {index} has an invalid model ID.")
-            if not valid_recommendation_reason(item["reason"]):
-                raise SetupError(
-                    f"Asset {role} recommendation {index} requires a nonempty single-line reason "
-                    "without surrounding whitespace.")
-            if item["effort"] not in EFFORT_LEVELS:
-                raise SetupError(f"Asset {role} recommendation {index} effort must be one of: "
-                                 + ", ".join(EFFORT_LEVELS) + ".")
-            if item["model"] in seen_models:
-                raise SetupError(f"Asset {role} recommends a duplicate model.")
-            seen_models.add(item["model"])
     return assets
 
 
@@ -351,29 +324,12 @@ def load_rule():
     return data
 
 
-def resolved_effort(asset, binding):
-    """Single resolution used by render_agent, prepare and verify-facing summaries.
-
-    Explicit plan effort wins; otherwise only a literal exact match with one of the asset's
-    recommended models carries that recommendation's effort. Unknown, custom or inherit
-    bindings keep the legacy default max; prefixes and suffixes are never stripped to guess.
-    """
-    explicit = binding.get("effort")
-    if explicit in EFFORT_LEVELS:
-        return explicit
-    model = binding.get("model")
-    if valid_model(model):
-        for item in asset.get("recommended_models", ()):
-            if item["model"] == model and item.get("effort") in EFFORT_LEVELS:
-                return item["effort"]
-    return "max"
-
-
 def render_agent(asset, binding):
     lines = ["---", "name: " + json.dumps(asset["name"], ensure_ascii=False),
              "description: " + json.dumps(asset["description"], ensure_ascii=False),
-             "model: " + json.dumps(binding["model"], ensure_ascii=False),
-             "effort: " + resolved_effort(asset, binding)]
+             "model: " + json.dumps(binding["model"], ensure_ascii=False)]
+    if "effort" in binding:
+        lines.append("effort: " + binding["effort"])
     if "tools" in asset:
         lines.append("tools: " + json.dumps(", ".join(asset["tools"])))
     body = asset["body"].rstrip() + "\n"
@@ -394,15 +350,20 @@ def frontmatter_scalars(data):
     except ValueError:
         raise SetupError("Agent frontmatter is incomplete.") from None
     values = {}
+    seen = set()
     for line in lines[1:end]:
-        match = re.fullmatch(r"([A-Za-z][A-Za-z0-9_-]*):\s*(.*)", line)
+        match = re.fullmatch(
+            r'(?:([A-Za-z][A-Za-z0-9_-]*)|"([A-Za-z][A-Za-z0-9_-]*)"|'
+            r"'([A-Za-z][A-Za-z0-9_-]*)')[ \t]*:\s*(.*)", line)
         if not match:
             continue
-        key, raw = match.groups()
+        plain, double_quoted, single_quoted, raw = match.groups()
+        key = plain or double_quoted or single_quoted
         if key not in ("name", "model", "effort", "description"):
             continue
-        if key in values:
+        if key in seen:
             raise SetupError("Agent frontmatter has a duplicate scalar field.")
+        seen.add(key)
         raw = raw.strip()
         if raw.startswith('"'):
             try:
@@ -426,6 +387,8 @@ def frontmatter_scalars(data):
             value = re.split(r"[ \t]+#", raw, maxsplit=1)[0].strip()
             scalar_end = len(raw)
         else:
+            if key == "effort":
+                values[key] = None
             continue
         if raw[scalar_end:] and not re.fullmatch(r"[ \t]+(?:#.*)?", raw[scalar_end:]):
             raise SetupError("Unsupported text after quoted agent scalar.")
@@ -725,19 +688,16 @@ def prepare(plan, config_dir):
         asset, binding = assets[role], selected.get(role)
         if binding is None:
             table.append({"role": role, "name": asset["name"], "description": asset["description"],
-                          "recommended_models": asset["recommended_models"],
                           "model": None, "effort": None, "status": "skipped", "notes": None})
             continue
-        effort = resolved_effort(asset, binding)
+        effort = binding.get("effort")
         table.append({"role": role, "name": asset["name"], "description": asset["description"],
-                      "recommended_models": asset["recommended_models"],
                       "model": binding["model"], "effort": effort, "status": "selected",
                       "notes": binding.get("notes")})
         path = config_dir / "agents" / (asset["name"] + ".md")
         targets.append(make_target(path, render_agent(asset, binding)))
         agents.append({"role": role, "name": asset["name"], "model": binding["model"],
-                       "effort": effort, "description": asset["description"],
-                       "recommended_models": asset["recommended_models"], "path": str(path)})
+                       "effort": effort, "description": asset["description"], "path": str(path)})
     card_summary = None
     if "orchestration" in plan:
         configuration = plan["orchestration"]
@@ -768,12 +728,9 @@ def prepare(plan, config_dir):
         targets.append(Target(path, original, content, 0o644 if mode is None else mode, fingerprint))
         rule = rule_bytes.decode("utf-8").rstrip("\n")
     notes = [
-        "Generated roles render an explicit effort of xhigh or max, resolved as explicit plan effort, "
-        "then an exact recommended-model match, then max; runtime CLAUDE_CODE_EFFORT_LEVEL or managed "
-        "limits may constrain it.",
-        "Model bindings preserve confirmed IDs exactly; access, capability and tool compatibility remain unverified.",
-        "recommended_models are selection starting points only; they are not a model availability list "
-        "and prove no access or capability.",
+        "A selected role with no explicit effort omits the frontmatter field and inherits runtime settings; "
+        "an explicit plan effort is preserved, subject to runtime or managed limits.",
+        "Model bindings preserve IDs exactly; access, capability and tool compatibility remain unverified.",
     ]
     if context:
         notes.append("Settings scope, managed policy, process environment and CLI flags can affect actual context behavior.")
@@ -889,15 +846,17 @@ def verify(config_dir):
             continue
         values = frontmatter_scalars(read_bytes(path))
         if (values.get("name") != assets[role]["name"] or not valid_model(values.get("model"))
-                or values.get("effort") not in EFFORT_LEVELS or not values.get("description")):
-            raise SetupError(f"Invalid generated role frontmatter/model/effort (xhigh or max): {path}")
-        agents.append({"name": values["name"], "model": values["model"], "effort": values["effort"],
+                or ("effort" in values and values["effort"] not in EFFORT_LEVELS)
+                or not values.get("description")):
+            raise SetupError(f"Invalid generated role frontmatter/model/effort (optional xhigh or max): {path}")
+        agents.append({"name": values["name"], "model": values["model"], "effort": values.get("effort"),
                        "path": str(path)})
     return {"ok": True, "command": "verify", "skill_root": str(SKILL_ROOT),
             "required_resources": required, "checked_local_links": sorted(checked_links), "agents": agents,
             "config_path": str(config_dir / "orchestration.json"), "configured": configuration is not None,
             "role_cards": role_cards(assets, configuration),
             "notes": ["Skill-only and partial role installations are supported.",
+                      "An absent agent effort field inherits runtime settings; an explicit field is reported.",
                       "Local file checks do not verify route access, model performance or context limits.",
                       *CARD_NOTES]}
 
@@ -929,13 +888,14 @@ def build_parser():
                    "Supported roles: " + ", ".join(ROLE_NAMES) + "; no separate visual role.\n"
                    "orchestration writes only <config>/orchestration.json; it needs no subscription, provider\n"
                    "or context changes and does not rewrite native agents or add automatic fallback.\n"
-                   "Plan schema/example (role cards; these values are not defaults):\n" + PLAN_EXAMPLE + "\n\n"
+                   "Plan schema/example (agent names are placeholders, not confirmed available agents;\n"
+                   "read live cards and the runtime tool catalog for selection):\n" + PLAN_EXAMPLE + "\n\n"
                    "Compatibility: top-level roles still binds one model per generated workflow-* agent;\n"
                    "context and always_delegate retain their existing behavior.\n"
                    "Canonical modelSettings keys: " + ", ".join(sorted(CANONICAL_MODELS)) + ".\n"
                    "Per-model autoCompactWindow: integer 100000..1000000 or string auto.\n"
-                   "roles.<role>.effort: optional " + " or ".join(EFFORT_LEVELS) + "; explicit plan effort wins, "
-                   "otherwise only an exact recommended-model match carries its effort, default max.\n"
+                   "roles.<role>.effort: optional " + " or ".join(EFFORT_LEVELS) + "; an explicit value is preserved, "
+                   "otherwise the field is omitted to inherit runtime settings.\n"
                    "env: only the four whitelisted keys; positive integer strings, AUTO 100000..1000000,\n"
                    "OUTPUT <=128000, DISABLE_1M only 1. Global env affects all roles/sessions.\n"
                    "Exact confirmed model IDs are preserved; no :max or [1m] suffix is added.\n\n"
