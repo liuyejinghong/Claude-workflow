@@ -1,25 +1,27 @@
 #!/usr/bin/env bash
-# 安装可移植编排 skill；--preset 额外安装 examples/magpie/agents 的 9 个示例 agent（Magpie 个人示例）并迁移旧档 haiku-5.5-max.md。
-# 默认不改 settings/CLAUDE.md/agents；覆盖前为既有目标创建唯一备份，绝不删除旧 .bak。Bash 3.2 兼容。
+# 安装可移植编排 skill 和模型中立的岗位资料。Bash 3.2 兼容。
+# 默认不改 settings/CLAUDE.md/agents；覆盖前为既有目标创建唯一备份，绝不删除旧 .bak。
 # 写入前先做一次简单预检（目标类型/符号链接/来源）；预检失败时不开始任何写入。
 # 不做多文件事务：失败时如实报告已完成的阶段与备份位置。
 set -euo pipefail
 
 usage() {
   printf '%s\n' \
-    '用法：install.sh [--preset] [--help]' \
+    '用法：install.sh [--help]' \
     '  默认：只复制完整 skill 目录（含 references/assets/scripts）到 <config>/skills/multi-model-orchestration' \
-    '  --preset：另安装 9 个示例 agent（examples/magpie/agents，本仓库 Magpie 个人示例），并迁移旧档 haiku-5.5-max.md（唯一备份，不覆盖旧 .bak）' \
+    '  --preset 已停用，不安装个人模型代理；请在配置可用模型后自行创建或绑定代理。' \
     '配置目录：CLAUDE_HOME > CLAUDE_CONFIG_DIR > HOME/.claude；拒绝符号链接目标；' \
-    'skill 备份：<config>/.workflow-backups/install-<唯一名>/multi-model-orchestration（目录权限 0700）；' \
-    'preset agent 备份：<原名>.bak.<时间戳>.<PID>（冲突时追加序号）；不删除任何既有备份。'
+    'skill 备份：<config>/.workflow-backups/install-<唯一名>/multi-model-orchestration（目录权限 0700）；不删除既有备份。'
 }
 
-PRESET=false
+SHOW_HELP=false
 for arg in "$@"; do
   case "$arg" in
-    --preset) PRESET=true ;;
-    --help|-h) usage; exit 0 ;;
+    --preset)
+      printf '%s\n' '错误：--preset 已停用，未写入任何文件；请配置可用模型后自行创建或绑定代理。' >&2
+      exit 2
+      ;;
+    --help|-h) SHOW_HELP=true ;;
     *)
       printf '不支持的参数：%s\n' "$arg" >&2
       usage >&2
@@ -27,6 +29,10 @@ for arg in "$@"; do
       ;;
   esac
 done
+if [ "$SHOW_HELP" = true ]; then
+  usage
+  exit 0
+fi
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
 
@@ -41,18 +47,6 @@ if [ "$DEST" != "/" ]; then
   while [ "${DEST%/}" != "$DEST" ]; do DEST="${DEST%/}"; done
 fi
 
-# 唯一备份路径：永不覆盖既有 .bak；时间戳+PID 冲突时追加序号。
-unique_backup_path() {
-  local base="$1.bak.$(date +%Y%m%d%H%M%S).$$"
-  local candidate="$base"
-  local n=1
-  while [ -e "$candidate" ] || [ -L "$candidate" ]; do
-    candidate="$base.$n"
-    n=$((n + 1))
-  done
-  printf '%s' "$candidate"
-}
-
 require_dir_target() {
   if [ -L "$1" ]; then
     printf '错误：%s（%s）是符号链接，拒绝写入。\n' "$1" "$2" >&2
@@ -60,17 +54,6 @@ require_dir_target() {
   fi
   if [ -e "$1" ] && [ ! -d "$1" ]; then
     printf '错误：%s（%s）已存在且不是目录，未改动。\n' "$1" "$2" >&2
-    exit 2
-  fi
-}
-
-require_file_target() {
-  if [ -L "$1" ]; then
-    printf '错误：%s（%s）是符号链接，拒绝覆盖。\n' "$1" "$2" >&2
-    exit 2
-  fi
-  if [ -e "$1" ] && [ ! -f "$1" ]; then
-    printf '错误：%s（%s）已存在且不是普通文件，未改动。\n' "$1" "$2" >&2
     exit 2
   fi
 }
@@ -114,19 +97,6 @@ preflight() {
   require_dir_target "$DEST/skills" "skills 目录"
   require_dir_target "$DEST/skills/multi-model-orchestration" "skill 目标"
   require_dir_target "$DEST/.workflow-backups" "skill 备份根目录"
-  if [ "$PRESET" = true ]; then
-    if [ ! -d "$SRC/examples/magpie/agents" ]; then
-      printf '错误：仓库缺少 %s，未安装 preset agents。\n' "$SRC/examples/magpie/agents" >&2
-      exit 1
-    fi
-    require_dir_target "$DEST/agents" "agents 目录"
-    local f
-    for f in "$SRC/examples/magpie/agents"/*.md; do
-      [ -e "$f" ] || continue
-      require_file_target "$DEST/agents/$(basename "$f")" "agent 目标"
-    done
-    require_file_target "$DEST/agents/haiku-5.5-max.md" "旧档 haiku-5.5-max"
-  fi
 }
 
 install_skill() {
@@ -175,72 +145,12 @@ install_skill() {
   fi
 }
 
-install_preset_agents() {
-  local src_agents="$SRC/examples/magpie/agents"
-  local parent="$DEST/agents"
-  local count=0
-  local f name t b
-
-  require_dir_target "$parent" "agents 目录"
-  mkdir -p "$parent"
-
-  for f in "$src_agents"/*.md; do
-    [ -e "$f" ] || continue
-    name="$(basename "$f")"
-    t="$parent/$name"
-    b=""
-    require_file_target "$t" "agent 目标"
-    if [ -e "$t" ]; then
-      b="$(unique_backup_path "$t")"
-      if ! cp -p "$t" "$b"; then
-        printf '错误：备份 %s 失败；安装不完整：skill 已安装、agent 已写入 %s 个；%s 未改动。\n' "$t" "$count" "$t" >&2
-        exit 1
-      fi
-      printf '备份 → %s\n' "$b"
-    fi
-    if ! cp "$f" "$t"; then
-      if [ -n "$b" ]; then
-        printf '错误：写入 %s 失败；安装不完整：skill 已安装、agent 已写入 %s 个；原文件备份在 %s。\n' "$t" "$count" "$b" >&2
-      else
-        printf '错误：写入 %s 失败；安装不完整：skill 已安装、agent 已写入 %s 个；该文件此前不存在，无备份。\n' "$t" "$count" >&2
-      fi
-      exit 1
-    fi
-    printf 'agent  → %s\n' "$t"
-    count=$((count + 1))
-  done
-
-  # 迁移：清理已停用的旧别名 haiku-5.5-max；保留唯一备份（不覆盖已有 *.bak）。不改动用户自有的 haiku-5.5.md 等自定义 agent。
-  local old="$parent/haiku-5.5-max.md"
-  require_file_target "$old" "旧档 haiku-5.5-max"
-  if [ -e "$old" ]; then
-    b="$(unique_backup_path "$old")"
-    if ! cp -p "$old" "$b"; then
-      printf '错误：迁移前备份 %s 失败；安装不完整：skill 已安装、%s 个 agent 已写入；旧档未改动。\n' "$old" "$count" >&2
-      exit 1
-    fi
-    if ! rm "$old"; then
-      printf '错误：移除旧档 %s 失败；安装不完整：skill 已安装、%s 个 agent 已写入；备份在 %s，旧档仍存在。\n' "$old" "$count" "$b" >&2
-      exit 1
-    fi
-    printf '迁移 → %s（已移除旧档 haiku-5.5-max.md）\n' "$b"
-  fi
-
-  printf 'preset：已安装 %s 个示例 agent；示例模型与路由需在你的环境确认后才可用。\n' "$count"
-}
-
 preflight
 install_skill
-if [ "$PRESET" = true ]; then
-  install_preset_agents
-fi
 
 printf '\n'
 printf '完成：可移植编排 skill 已安装到 %s/skills/multi-model-orchestration。\n' "$DEST"
-if [ "$PRESET" = true ]; then
-  printf 'preset 另安装了 9 个示例 agent（examples/magpie 的 Magpie 个人示例；示例路由不是安装前提，需按你的环境确认）。\n'
-fi
-printf '默认未改 settings、agents（preset 除外）与 CLAUDE.md。\n'
+printf '默认未改 settings、agents、角色卡与 CLAUDE.md。\n'
 printf '提示：已有 Claude 订阅且所需 Claude 模型全部可用时，直接使用 Claude Code 原生子代理即可，通常无需本项目的角色编排。\n'
 printf '下一步（在 Claude Code 中执行）：\n'
 printf '  /multi-model-orchestration install\n'

@@ -3,7 +3,6 @@
   "roles": {
     "worker": {
       "candidates": [
-        {"agent": "minimax-m3.1-flash-free", "priority": 1},
         {"agent": "deepseek-v4.1-flash-free", "priority": 2},
         {"agent": "deepseek-v4.1-flash", "priority": 3},
         {"agent": "glm-5.3", "priority": 4},
@@ -24,7 +23,6 @@
     },
     "researcher": {
       "candidates": [
-        {"agent": "minimax-m3.1-flash-free", "priority": 1},
         {"agent": "deepseek-v4.1-flash-free", "priority": 2},
         {"agent": "deepseek-v4.1-flash", "priority": 3}
       ]

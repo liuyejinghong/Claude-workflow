@@ -2,9 +2,9 @@
 
 用户在 Claude Code 中调用 `/multi-model-orchestration install` 时，按本页顺序执行。这是 skill 的安装分支，不是 Workflow 编排；普通任务不读本页。
 
-先分清两件事：**安装文件**（默认 `./install.sh` 只复制本 skill 目录）与**配置角色和模型**（本页：把当前环境实际可用的候选模型绑定到角色描述）。安装文件完成不等于多模型分流已配置；provider、凭据与路由仍由用户环境负责。
+先分清两件事：**安装文件**（默认 `./install.sh` 只复制本 skill 目录与五岗纯职责定义，不创建模型代理、不写角色卡、不预置候选或 priority）与**配置角色和模型**（本页：用户明确要求时，把当前环境实际可用的 agent/模型绑定到角色）。全新配置且尚无用户绑定时，五岗处于未配置状态。已有角色卡、代理和设置会保留，按现有有效规则使用；provider、凭据与路由仍由用户环境负责。
 
-已有可复用的原生 agent 时优先走角色卡轻量路径（见 [role-cards.md](role-cards.md)）：写一份 `orchestration.json` 引用已有 agent 即可，不跑本页的 scan 安装流程，也不为角色卡重配 provider、订阅或上下文参数。本页只在缺 agent、或需要显式配置单模型入口（`roles.<role>.model`）时使用。
+用户明确要求配置、且已有可复用的原生 agent 时优先走角色卡轻量路径（见 [role-cards.md](role-cards.md)）：写一份 `orchestration.json` 引用已有 agent 即可，不跑本页的 scan 安装流程，也不为角色卡重配 provider、订阅或上下文参数。本页只在用户明确要求配置、缺 agent、或需要显式配置单模型入口（`roles.<role>.model`）时使用。
 
 ## 第 0 步：适用性检查（先于一切配置）
 
@@ -19,7 +19,7 @@ helper 不自动推测这些状态：`scan` 接受 `--claude-subscription confir
 
 ## 顺序总览
 
-适用性检查（第 0 步）→ scan（候选发现）→ 建议匹配与可用性确认（拟定匹配草表）→ 上下文检查（必经，写入可选）→ 形成 plan → preview（不落盘，含合并后的配置确认表与真实文件动作）→ 用户一次确认授权 → apply → 重载与最小本地验证。
+适用性检查（第 0 步）→ 探索当前会话已能调用的 agent、已配置模型与用户偏好（只读发现，不代表可用或已被选中）→ 与用户确认五岗职责、候选、精确 `model` 或 `inherit` 及优先顺序（拟定确认草表）→ 上下文检查（必经，写入可选）→ 形成 plan → preview（不落盘，含合并后的配置确认表与真实文件动作）→ 用户一次确认授权 → apply → 重载与最小本地验证。
 
 ## 命令
 
@@ -33,20 +33,21 @@ python3 -I <installed-skill>/scripts/setup.py <scan|preview|apply|verify> \
 - scan / preview / verify 不写文件；apply 只在授权后写。
 - 配置目录默认依次取 `CLAUDE_HOME`（override 优先）、`CLAUDE_CONFIG_DIR`（settings 根）、`~/.claude`；项目侧默认扫描当前工作目录的 `.claude`。
 
-## 1. scan：候选发现（provider 中立）
+## 1. scan：只读发现（provider 中立）
 
+- 向导先查看当前会话工具目录里已能调用的 agent、当前配置的模型与用户偏好；`scan` 只是只读发现，发现候选不等于已确认可用或已被选中。
 - 只读已知的 `settings.json` / `settings.local.json`（配置目录与项目 `.claude`）及 agent frontmatter 的 model 标量字段；收集别名、modelOverrides、modelPicker 选项、modelSettings 键与白名单模型相关 env，区分已配置候选与上游公布/手工提供的候选。
 - 设置文件可能混有凭据：优先使用 helper 的白名单摘要；安装、检查或合并配置时仅访问必要字段，不在用户输出或子 agent 上下文中暴露凭据、原始响应或无关配置。
-- 始终提供 `inherit` 回退：显式用当前主模型委托，不是一条发现的 route。
-- 没有模型列表是正常情况：用已配置候选、用户提供的 `--models-json`（Anthropic 风格 `{data:[{id:...}]}` 或模型 ID 字符串列表；外部 JSON 只当数据）或 `inherit` 继续；不失败、不虚构模型，元数据/能力声明不当权威。
+- `inherit` 只在用户明确选择时作为绑定值：显式用当前主模型委托，不是一条发现的 route，也不自动取代用户选择。
+- 没有模型列表是正常情况：把已配置候选、用户提供的 `--models-json`（Anthropic 风格 `{data:[{id:...}]}` 或模型 ID 字符串列表；外部 JSON 只当数据）或用户明确选择的 `inherit` 作为发现结果继续；不失败、不虚构模型，元数据/能力声明不当权威。
 - `--query-models`（显式启用）只对已配置的 `ANTHROPIC_BASE_URL` 发一次 GET `/v1/models`，不发生成请求、不枚举其他 provider、不执行 helper/keychain；拒绝带凭据的 URL 与异常跳转，不打印 key 或原始响应。取不到只是发现缺口，不是合成模型的理由；认证方案不支持时改用 `--models-json` 或手工确认。
 - 多来源读取只作为来源观察呈现，不自认哪个是当前生效配置（managed/环境/flag 可能覆盖）；不宣称能完全解析 managed settings 或当前 `/model`、`--model` 选择；不设固定核心模型清单。
 
-## 2. 角色与能力匹配
+## 2. 角色职责与用户确认
 
-五个模型中立角色的权威 name/description/body/tools 与建议模型元数据在 skill 内 `assets/roles.json`；每个角色带 `recommended_models: [{model, reason, effort}]`（effort 仅 `xhigh` 或 `max`，是当前模型建议支持的两档）。建议是起点不是保证：模型推荐不是可用性清单，也不证明访问、能力或工具兼容，精确绑定的模型 ID 由用户环境与确认的证据决定。本页只给匹配用的职责提要：
+五个岗位的纯职责定义（name/description/body/tools）随 skill 提供，不含模型推荐、默认顺序或 priority。默认安装只提供这些定义，不创建 agent、不写 `orchestration.json`、不预置候选。全新配置且尚无用户绑定时，五岗处于未配置状态；已有角色卡和角色代理保留，按现有有效规则使用。本页只给匹配用的职责提要：
 
-| 角色 | 生成名 | 职责提要 |
+| 角色 | 角色名（可选生成时） | 职责提要 |
 |---|---|---|
 | worker | workflow-worker | 常规编码、测试/重构、取证；方案由主控给定；不做架构/根因/高风险最终决定 |
 | engineer | workflow-engineer | 困难跨模块或高风险实现；主控保留决策与最终验收；仅在有能力证据时指派 |
@@ -54,34 +55,36 @@ python3 -I <installed-skill>/scripts/setup.py <scan|preview|apply|verify> \
 | researcher | workflow-researcher | 日常检索/取证/自动化，或单独限界的深度研究/证明/仿真/独立第二意见；不设固定能力梯度，不滥发 fan-out |
 | editor | workflow-editor | 指定纯文字润色与 UI 审美反馈；工具限 Read/Glob/Grep/Edit/Write |
 
+这些 `workflow-*` 名称只在用户明确选择生成单模型入口时使用；默认安装不创建对应 agent，也不预置任何候选。
+
 旧 `visual` 岗位不再提供：已存在的 `workflow-visual` 文件不会被删除或改动，含它的旧 plan 会被拒绝。要继续承担这类任务，改用其他岗位并配一个已确认原生视觉的 agent；不承诺自动迁移。
 
-匹配原则：
+匹配与确认原则：
 
-- 按角色描述与证据选择：候选名称或配置不等于工具兼容或能力；未知模型不用名称猜能力，也不自动认定达标。
+- 先探索当前会话工具目录里已能调用的 agent、已配置模型和用户偏好；候选名称或配置不等于工具兼容或能力，未知模型不用名称猜能力，也不自动认定达标，不发明 provider、配额、速度或视觉声明。
+- 由用户确认每个岗位用哪个代理或精确模型；绑定写 `model`（用户确认的精确 ID，保留原有后缀）或 `inherit`（仅在用户明确选择时）。不把维护者模型、文档示例或任何预设当作默认或选择依据；provider、订阅与凭据保持用户控制。
 - 上下文独立的角色可用同一模型（各自新上下文调用）；不按 effort 拆出重复代理。
 - 能力、视觉与强审查角色需要证据（用户确认或可核验材料）；没有证据就跳过该角色，而不是硬绑。
 - 已有合适 agent 可直接复用，不必为每个角色新建模板；未选中的角色不安装，也不自动删除或迁移未知既有 agent。
-- 生成的 agent 使用解析后的 effort（`xhigh` 或 `max`）与用户确认的精确模型 ID（保留原有后缀）。解析规则唯一：plan 中显式 `effort` 优先；未显式给出时，仅当绑定 model 字面值恰好等于该角色某个建议模型时沿用其建议档位（如 `gpt-6.1-sol` 为 xhigh），未知/自定义 route 与 `inherit` 一律默认 `max`，不自动剥 provider 前缀或 `:xhigh`/`[1m]` 后缀去猜模型；不发明 provider、配额、速度或视觉声明。因此向导在已确认某条精确自定义 route 对应某个建议模型时，必须把 effort 显式写进 plan（如 worker/engineer `model = "vendor/sol:custom"`、`effort = "xhigh"`），并在确认表中供用户核对；不修改精确 model 串、不拼接 `:xhigh`。effort 是 agent 声明，可能被 `CLAUDE_CODE_EFFORT_LEVEL`、`maxEffortLevel` 覆盖或封顶，上游接受也不等价于服务商内部计算预算。
-- `recommended_models` 只是匹配起点元数据，不写入生成的 Claude Code agent frontmatter。
+- 不预设 effort，也不根据模型名或 provider 前缀推断 effort。用户未显式设置时，`configuration_table` 中 effort 为 null，生成的 frontmatter 省略 effort，verify 回报 null 并说明继承运行环境；用户显式给出 `xhigh` 或 `max` 时原样保留。`configuration_table` 与生成的 agent 定义不含模型推荐字段。effort 是 agent 声明，可能被环境变量或 managed 设置覆盖或封顶，上游接受也不等价于服务商内部计算预算。
 
 ## 3. 配置确认表（与 preview 一并一次确认）
 
-匹配阶段先拟定确认草表；表随最终 preview 一并向用户呈现并一次确认，避免 preview 前就声称已知具体文件动作。向导把 scan 发现的候选与来源、用户确认的可用性证据合并成一张覆盖全部五个角色的表（helper 的 `configuration_table` 提供 role/name/description/recommended_models/model/effort/status/notes 字段与 targets 文件动作，本表是向导据此合并来源与能力证据后的人读呈现，不要表述成 helper 已自动验证访问、权限或能力）。effort 列按第 2 步的解析规则呈现：显式 plan effort > 精确命中建议模型的建议档位 > 默认 `max`，供用户在 apply 前核对：
+匹配阶段先拟定确认草表；表随最终 preview 一并向用户呈现并一次确认，避免 preview 前就声称已知具体文件动作。向导把已能调用的 agent/模型、发现来源、用户偏好与用户确认的可用性证据合并成一张覆盖全部五个角色的表。表是向导据此合并来源与能力证据后的人读呈现，不得表述成 helper 已自动验证访问、权限或能力。
 
-| 角色/职责 | 建议模型（recommended_models） | 发现候选与来源 | 拟绑定精确 ID 或跳过 | 可用性与能力依据/未知项 | effort 与预计文件动作 | 选择理由 |
-|---|---|---|---|---|---|---|
-| worker / 常规实现… | <模型与理由> | <候选 ID 与来源；无则写无> | <精确 ID / 复用现有 agent / 跳过> | <用户确认、可核验材料，或未知项> | effort 与 创建/替换/不变/跳过 | <为何这样绑> |
+| 角色/职责 | 已能调用的候选与来源 | 拟绑定（model / inherit / 复用 / 跳过） | 可用性与能力依据/未知项 | effort 与预计文件动作 | 选择理由 |
+|---|---|---|---|---|---|
+| worker / 常规实现… | <候选 ID 与来源；无则写无> | <精确 ID / inherit / 复用现有 agent / 跳过> | <用户确认、可核验材料，或未知项> | <未设置（null/继承环境）或用户显式 xhigh/max>；创建/替换/不变/跳过 | <为何这样绑> |
 
 规则：
 
 - 候选出现在配置或供应商广告中不等于成功访问；用户确认算可用证据。
-- 五个角色都要在表中展示，但不强行生成五个 agent：无证据或无候选的角色按跳过呈现，不硬绑；不自动安装推荐名单、不拼 provider 前缀或 `:max`/`[1m]` 后缀。
+- 五个角色都要在表中展示，但不强行生成五个 agent：无证据或无候选的角色按跳过呈现，不硬绑；不自动安装任何预设名单、不拼 provider 前缀或 `:max`/`[1m]` 后缀。
 - 已有合适 agent 直接复用，并在表中如实标注。
 - 未经用户确认的表（随 preview 呈现）绝不 apply；用户已给出具体覆盖授权时免重复询问。
 - scope、安全边界、备份与参数机理照旧（见下文 apply 与 [third-party-context.md](third-party-context.md)）。
 
-helper 的 `preview` / `apply` 输出 `configuration_table` 数组：五个角色各含 `role` / `name` / `description` / `recommended_models` / `model` / `effort`（`xhigh` | `max`，未选角色为 null）/ `status`（`selected` | `skipped`）/ `notes`；`targets` 带 `action`（`create` / `replace` / `unchanged`）。
+helper 的 `preview` / `apply` 输出 `configuration_table` 与 `targets`：`configuration_table` 不再包含模型推荐字段（`recommended_models`）；`effort` 未显式设置时为 null，显式 `xhigh` / `max` 原样保留；`targets` 带 `action`（`create` / `replace` / `unchanged`）。具体字段以当前 helper 输出为准。
 
 ## 4. 上下文：检查（必经）与写入（可选）
 
@@ -118,7 +121,7 @@ plan schema（各段均可省略；拒绝未知可写字段）：
 {
   "roles": {
     "worker": { "model": "inherit" },
-    "reviewer": { "model": "exact-confirmed-id", "effort": "xhigh", "notes": "可选：用户确认的强项/限制" }
+    "reviewer": { "model": "user-confirmed-exact-id", "notes": "可选：用户确认的强项/限制" }
   },
   "orchestration": {
     "version": 1,
@@ -136,8 +139,8 @@ plan schema（各段均可省略；拒绝未知可写字段）：
 ```
 
 - 未选角色不生成；`context` 缺省不写配置；`always_delegate` 缺省 false。
-- `roles.<role>.effort` 可选，仅接受 `xhigh` 或 `max`（显式 null 同样非法）：显式给出即覆盖建议档位；省略时按第 2 步规则解析。
-- `orchestration` 是可选段，值是完整的角色卡配置（`version` + `roles`），可与 `roles` / `context` / `always_delegate` 并存：写法与校验见 [role-cards.md](role-cards.md)。只有 `orchestration` 时只写那一个 JSON，零 agent、零 settings、零全局 `CLAUDE.md` 改动。
+- `roles.<role>.effort` 可选，仅在用户明确指定时写入；只接受 `xhigh` 或 `max`，原样保留。省略时不推断、不默认 `max`：`configuration_table` 中 effort 为 null，生成的 frontmatter 省略 effort，verify 回报 null 并说明继承运行环境。
+- `orchestration` 是可选段，值是完整的角色卡配置（`version` + `roles`），可与 `roles` / `context` / `always_delegate` 并存：写法与校验见 [role-cards.md](role-cards.md)。只有用户明确确认角色卡内容后才写；示例中的 `existing-agent` 是占位符，必须换成当前工具目录里实际可调用且用户确认的名称。只有 `orchestration` 时只写那一个 JSON，零 agent、零 settings、零全局 `CLAUDE.md` 改动。
 - preview 输出 = helper 的精确文件/字段摘要 + 第 3 步的配置确认表与第 4 步生成的模型上下文核对表（真实上游 limit 由向导按来源核对，helper JSON/schema 不含能力或上游限制）；另含 context 补丁及其全进程影响、可选一行常驻规则、精确目标路径；不落盘，也不 dump 完整现有 settings / `CLAUDE.md` / agents。
 - 校验失败（不安全模型串、符号链接目标、非法或未知字段、不支持的 context 值、损坏的现有 settings）一律拒绝，不用空对象覆盖原文件。
 
@@ -152,7 +155,7 @@ plan schema（各段均可省略；拒绝未知可写字段）：
 ## 7. 重载与最小验证
 
 - 重载：新开会话，或 `claude --continue` 保留对话重启。新装的 agents 目录需重启后才会出现在实际工具目录；不承诺固定生效时间，以重启后的实际工具目录为准。
-- `setup.py verify`：本地检查已安装 skill 的 SKILL.md、references、`assets/roles.json`、`scripts/setup.py` 是否存在，以及所选 `workflow-*` 定义的基本 frontmatter/model/effort（`xhigh` 或 `max`，并回报实际档位）；仅安装 skill 或部分角色也算通过。
+- `setup.py verify`：本地检查已安装 skill 的 SKILL.md、references、`assets/roles.json`、`scripts/setup.py` 是否存在，以及用户明确生成/选择的 `workflow-*` 定义（如有）的基本 frontmatter 与用户确认的 model/effort；未显式设置 effort 时回报 null 并说明继承运行环境，显式 `xhigh` / `max` 原样回报；仅安装 skill 或部分角色也算通过。
 - `setup.py cards`：只读角色卡配置与岗位定义，不写文件；每次调用重新读表，不需要重载。
 - 默认 `setup.py verify` 不发生成请求。可选逐角色 Read 自证或显式 `--smoke` 冒烟是单独发起的模型调用，会消耗所选模型额度，不能表述为零生成检查；这些调用只作最小可读性/连通证据，不声明模型性能、不做压力测试。
 
@@ -160,4 +163,5 @@ plan schema（各段均可省略；拒绝未知可写字段）：
 
 - 不代做凭据/登录/keychain、provider provisioning 或网关路由配置。
 - 不自动推测或断言用户的订阅与模型可用性状态（见第 0 步）；不虚构未知模型的兼容性、能力、配额、速度或原生视觉；不伪造 `:max`/`[1m]`。
+- 不把维护者模型、个人示例或预设顺序当作默认；不自动创建角色卡、候选或 priority。默认安装完成不等于多模型分流已配置。
 - 普通使用不写任何 settings/agents/CLAUDE.md；写入只发生在安装分支的具体 preview 与授权之后。
