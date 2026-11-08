@@ -97,7 +97,7 @@ cd Claude-workflow
 
 历史命令 `./install.sh --preset` 不再安装个人示例模型：执行会明确报错并退出，不写入任何文件。
 
-模型选择由你的环境决定：先确认哪些模型已经接通、当前会话能调用，再按任务风险、成本和你的偏好确认绑定。本文不提供默认模型或固定顺序，也不把维护者环境里的搭配当通用推荐。公开模型与价格调研记录（2026-10-20 取样，历史资料，非默认推荐）见[模型调研](docs/research/popular-models-2026-10-20.md)。
+模型选择由你的环境决定：先确认哪些模型已经接通、当前会话能调用，再按任务风险、成本和你的偏好确认绑定。本文不提供默认模型或固定顺序，也不把维护者环境里的搭配当通用推荐。公开模型与价格调研记录（2026-10-20 取样）见[模型调研](docs/research/popular-models-2026-10-20.md)；子代理评分与岗位适配归档（2026-11-07）见[模型评分归档](docs/research/model-benchmarks-2026-11-07.md)。两份都是历史资料，非默认推荐。
 
 ## 查看运行状态
 
@@ -105,10 +105,11 @@ cd Claude-workflow
 
 ## 更多用法
 
+- 委托策略的收敛方案及未来验证计划（尚未生效）：[子代理编排收敛方案](docs/plans/orchestration-simplification.md)
 - 想调整每类岗位用哪些代理、谁先谁后：[角色卡参考](skills/multi-model-orchestration/references/role-cards.md)
 - 模型接不上，或安装后当前会话看不到新代理：[代理与安装排查](skills/multi-model-orchestration/references/agents-and-installation.md)
 - 第三方模型的上下文窗口、压缩和输出上限：[第三方上下文](skills/multi-model-orchestration/references/third-party-context.md)
 - 委托任务怎么写、并行和复核怎么安排：[编排手册](skills/multi-model-orchestration/SKILL.md)
 - 想让每个会话都带上委托约定：[常驻规则模板](templates/CLAUDE.md.snippet)
 
-版本：Claude-workflow 0.7.0，token-speed 0.6.0（tag `token-speed-v0.6.0`），两者独立发版。更新见 [CHANGELOG](CHANGELOG.md) 与 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)，许可证 [MIT](LICENSE)。
+版本：Claude-workflow 0.7.0，token-speed 0.6.1（tag `token-speed-v0.6.1`），两者独立发版。更新见 [CHANGELOG](CHANGELOG.md) 与 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)，许可证 [MIT](LICENSE)。

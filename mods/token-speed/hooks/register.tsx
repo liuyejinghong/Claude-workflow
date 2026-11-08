@@ -189,7 +189,10 @@ function suffixEffort(model: string): TokenSpeedEffort | null {
   const match = model.trim().replace(/\[1m\]$/i, '').match(/(?:\((low|medium|high|xhigh|max)\)|:(low|medium|high|xhigh|max))$/i)
   return effortValue((match?.[1] ?? match?.[2])?.toLowerCase())
 }
+// /effort is an explicit session configuration request, not evidence of applied effort.
+let commandEffort: TokenSpeedEffort | null = null
 async function configuredEffort($: EngineInterface, model: string): Promise<TokenSpeedEffort | null> {
+  if (commandEffort !== null) return commandEffort
   // A session-pinned effort environment is live configuration the saved settings cannot see.
   // Read alone, in its own guard: an unreadable environment must not skip the settings.
   try {
@@ -635,6 +638,12 @@ async function appliedEffort($: EngineInterface, heldEpoch: number, id: string, 
   if (effort === null || heldEpoch !== epoch) return
   await mutate($, heldEpoch, state => changeRow(state, id, r => ({ ...r, effort, effortSource: 'applied' })))
 }
+async function configuredCommandEffort($: EngineInterface, heldEpoch: number, value: unknown): Promise<void> {
+  const effort = effortValue(value)
+  if (effort === null || heldEpoch !== epoch) return
+  commandEffort = effort
+  await mutate($, heldEpoch, state => changeRow(state, 'main', r => ({ ...r, effort, effortSource: 'configured', seen: true })))
+}
 const humanWindow = (window: number): string =>
   window >= 1e6 ? `${(window / 1e6).toFixed(1)}M` : window >= 1e3 ? `${Math.round(window / 1e3)}k` : `${window}`
 const contextLabel = (context: TokenSpeedContextInfo): string => context.window > 0
@@ -711,6 +720,7 @@ export const register: Register = on => {
     await observe(async () => {
       if (heldEpoch !== epoch) return
       if (observationGeneration === null) {
+        commandEffort = null
         const now = await $.clock.now()
         if (heldEpoch !== epoch) return
         observationGeneration = `${now}:${Math.random()}`
@@ -753,6 +763,7 @@ export const register: Register = on => {
   })
   on('session.end', async ($, e, next) => {
     invalidateMeasurements()
+    commandEffort = null
     activeRequests.clear()
     stopTimer()
     await observe(() => update($, snapshot, () => { const state = empty();
@@ -897,6 +908,12 @@ export const register: Register = on => {
     }))
     return rest
   })
+  on('command.run', { command: 'effort' }, async ($, e, next) => {
+    const heldEpoch = epoch
+    const rest = await next(e)
+    await observe(() => configuredCommandEffort($, heldEpoch, e.args.trim()))
+    return rest
+  })
   on('command.run', { command: 'tok-speed' }, async ($, e) => {
     const args = e.args.trim()
     if (args && args !== 'reset') return { text: '用法：/tok-speed 或 /tok-speed reset' }
@@ -927,7 +944,7 @@ export const register: Register = on => {
       }),
     ])
     return { text: [
-      'token-speed 0.6.0 · Magpie measured · 本 session、本插件实际观察到的请求 · 各代理 Last、同完整模型共享 Avg',
+      'token-speed 0.6.1 · Magpie measured · 本 session、本插件实际观察到的请求 · 各代理 Last、同完整模型共享 Avg',
       'Last：本代理、本完整请求模型最近完成且仍有效的可测速样本；等待、流中、失败或不可测速不清旧值。latest 单独显示最新请求 waiting/streaming/pending/measured/failed/unmeasurable/ambiguous/unavailable，Last 可来自此前请求。Avg：本 session 所有代理（含已结束）同完整请求模型最近 24h 的测速输出 token 总和 / 测速窗口总时长，严格按 Magpie 完成时间判窗，不取速度算术平均，不跨 session。',
       '依赖本地 Magpie 与 curl；优先 ANTHROPIC_BASE_URL 环境，其次 settings.env，只访问明确 loopback。无 shell GET 禁用 curlrc、代理和重定向，仅接受完整 HTTP 200 JSON；失败或缺少 curl 保持未知。只采纳本机普通 Claude 来源，排除用途、同步和远程转发标记；冲突候选仍参与歧义。session、agent、完整请求模型、step 时间窗口及 CLI input+cache_write/output/cache_read 三元组必须双向唯一；usage 缺失/0、deferred/retry 计数不一致为 —。computer=this 不能识别所有 LAN 直连；session id 非完整请求 id。q 不检索 native_session，自定义 X-Magpie-Session 覆盖时查不到则 —。',
       '口径与 Magpie measured Speed 一致：排除 TTFT，已知 reasoning 时使用正文及 first_text，只有有证据的可见 reasoning 才计全输出；hidden 无正文、短窗、burst、失败/取消/截断不计。只复现 Magpie 测量，不保证底层供应商真实推理 token 绝对准确；不使用本地字符估算或旧全程历史。',

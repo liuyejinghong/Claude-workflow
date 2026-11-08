@@ -1,4 +1,4 @@
-# token-speed 0.6.0
+# token-speed 0.6.1
 
 适用于 Claude Code 2.1.296 的 function-hooks mod。在提示框上方，主控与每个活跃子代理各用一行显示模型、effort、上下文与输出速率，工作区放在最后一行。只观察原有模型请求，不调用额外模型或 tokenizer。速率依赖本机 Magpie 和 `curl`，请求完成后通过引擎 process API 安全读取本地用量；分支通过同一 API 调用本机 git。
 
@@ -24,13 +24,13 @@
 
 进度条是固定 10 个终端 cell 的短矩形，轨道使用 theme `rate_limit_empty`，整格填充 `█`，尾部使用 `▏▎▍▌▋▊▉` 表示 1/8 cell。共 80 个视觉档位（10 格 × 8 档），因此 0–100 的整数百分点不是每个都有不同的条形：相邻百分点可落在同一档（例如 67% 与 68% 的条形相同，但数字 `67%`、`68%` 不同）。宽屏也不扩展为长条。窄屏可省略条形，数值始终保持整数 1% 精度。填充固定使用 theme `rate_limit_fill`，不随占用变化，没有横向渐变；Ctx 数值用 `text`，未知占用用 `inactive`。未知占用只画轨道空条，并以 `—%` 或 `?` 明确标为未知，不能解释为 0%。
 
-主控上下文来自 `$.session.usage()`，与状态栏同口径，最近响应的 uncached + cache-read + cache-written 输入 tokens 除以窗口；首次响应或成功压缩后无读数显示 `—%/窗口`。已知读数不会被打回未知：缺少有效 tokens 的部分读数（窗口相同）与主控模型切换都会沿用上一次已知读数，只有成功压缩（主控）或整会话重置才清空，因此进度条不会在两次轮询之间闪回 `—%`。子代理输入量来自自己最近一次响应的 CLI usage，不累计多次请求。子代理分母由启动时读取一次的 `data/model-contexts.json` 提供，无联网刷新。优先顺序为实际运行窗口、明确 CLI override、官方默认、未知；官网仅提供容量时明确标为官方 capacity。输入始终取自己最近一次 CLI response，主控仍以 `$.session.usage()` 为准。数据中的官方来源、核验日期和 registry 版本可通过 `/tok-speed` 查看。读取或严格解析失败时，官方表为空，保留已确认的 Sol/Astra 500000、GLM-5.3/Flash 1000000 后备，不中断请求。
+主控上下文来自 `$.session.usage()`，与状态栏同口径，最近响应的 uncached + cache-read + cache-written 输入 tokens 除以窗口；首次响应或成功压缩后无读数显示 `—%/窗口`。已知读数不会被打回未知：缺少有效 tokens 的部分读数（窗口相同）与主控模型切换都会沿用上一次已知读数，只有成功压缩（主控）或整会话重置才清空，因此进度条不会在两次轮询之间闪回 `—%`。子代理输入量来自自己最近一次响应的 CLI usage，不累计多次请求。子代理分母由启动时读取一次的 `data/model-contexts.json` 提供，无联网刷新。优先顺序为实际运行窗口、明确 CLI override、官方默认、未知；官网仅提供容量时明确标为官方 capacity。输入始终取自己最近一次 CLI response，主控仍以 `$.session.usage()` 为准。数据中的官方来源、核验日期和 registry 版本可通过 `/tok-speed` 查看。读取或严格解析失败时，官方表为空，保留已确认的 Sol 500000、Terra 272000、Astra 500000、GLM-5.3/Flash 1000000 后备，不中断请求。
 
-官方记录覆盖当前前沿型号，共 25 条（各条核验日期见 registry；`gpt-6.1-sol` 为 2026-10-12，`gpt-6.1-terra` 为 2026-10-27，其余为 2026-10-09）。Anthropic：`claude-haiku-5-5`、`claude-sonnet-5-5`、`claude-opus-5-5`、`claude-fable-5-1`、`claude-fable-5`、`claude-mythos-5-1`、`claude-mythos-5`、`claude-opus-5`、`claude-sonnet-5`、`claude-opus-4-8`、`claude-opus-4-7`、`claude-opus-4-6`、`claude-sonnet-4-6` 为共享输入输出上下文 1M，`claude-haiku-4-5`、`claude-sonnet-4-5` 为 200k。OpenAI：`gpt-6.1-sol` 为 Codex/Work 默认 500000 / max 1000000（Tibo 2026-10-12 公告），`gpt-6.1-terra` 为 Codex 官方默认 500000 / max 872000 并带 API 总上下文 1050000 元数据（官方 Codex models.json 与 API 文档，2026-10-27 核验），`gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna` 仍为 Codex 官方默认 272000 / max 872000，其中 `gpt-6.1-sol` 与 `gpt-6-astra` 另带 API 总上下文 1050000 与 max input 922000 元数据。`glm-5.3`、`glm-5.3-flash`、`deepseek-v4.1-flash`（aliases `deepseek-flash`、`deepseek-v4-flash`）、`deepseek-v4-pro`、`gemini-3.8-flash` 官网只给出容量且未声明默认/最大，按官方 capacity 记录；Gemini 的 1,048,576 是输入上限，输出上限 65,536 单独存在，不是共享窗口。用户 override 独立存放，不混作官方事实。MiniMax `minimax-m3.1-flash-free`（alias `minimax-m3.1-flash-preview:free`）另有本机已确认的 1000000 override（2026-10-19）；DeepSeek `deepseek-v4.1-flash-free` 另有本机网关已确认的 1000000 override（2026-10-20）。匹配只用去渠道的 canonical 尾名及精确 aliases，不匹配子串，不把未知邻近型号映射到已知型号；不使用动态 `haiku`/`opus`/`sonnet` 别名，不因 `[1m]` 选择官方最大值。来源分别记录为 `cli-input-window-config`、`cli-input-official-default`、`cli-input-official-capacity`。
+官方记录覆盖当前前沿型号，共 25 条（各条核验日期见 registry；`gpt-6.1-sol` 为 2026-10-12，`gpt-6.1-terra` 为 2026-10-27，其余为 2026-10-09）。Anthropic：`claude-haiku-5-5`、`claude-sonnet-5-5`、`claude-opus-5-5`、`claude-fable-5-1`、`claude-fable-5`、`claude-mythos-5-1`、`claude-mythos-5`、`claude-opus-5`、`claude-sonnet-5`、`claude-opus-4-8`、`claude-opus-4-7`、`claude-opus-4-6`、`claude-sonnet-4-6` 为共享输入输出上下文 1M，`claude-haiku-4-5`、`claude-sonnet-4-5` 为 200k。OpenAI：`gpt-6.1-sol` 为 Codex/Work 默认 500000 / max 1000000（Tibo 2026-10-12 公告），`gpt-6.1-terra` 为 Codex 官方默认 500000 / max 872000 并带 API 总上下文 1050000 元数据（官方 Codex models.json 与 API 文档，2026-10-27 核验）；当前本机 CLI 对 Terra 的 272000 override 会被 token-speed 显示为 override。这是当前 CLI 配置目标，不是 provider/API 最大上下文。`gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna` 仍为 Codex 官方默认 272000 / max 872000，其中 `gpt-6.1-sol` 与 `gpt-6-astra` 另带 API 总上下文 1050000 与 max input 922000 元数据。`glm-5.3`、`glm-5.3-flash`、`deepseek-v4.1-flash`（aliases `deepseek-flash`、`deepseek-v4-flash`）、`deepseek-v4-pro`、`gemini-3.8-flash` 官网只给出容量且未声明默认/最大，按官方 capacity 记录；Gemini 的 1,048,576 是输入上限，输出上限 65,536 单独存在，不是共享窗口。用户 override 独立存放，不混作官方事实。MiniMax `minimax-m3.1-flash-free`（alias `minimax-m3.1-flash-preview:free`）另有本机已确认的 1000000 override（2026-10-19）；DeepSeek `deepseek-v4.1-flash-free` 另有本机网关已确认的 1000000 override（2026-10-20）。匹配只用去渠道的 canonical 尾名及精确 aliases，不匹配子串，不把未知邻近型号映射到已知型号；不使用动态 `haiku`/`opus`/`sonnet` 别名，不因 `[1m]` 选择官方最大值。来源分别记录为 `cli-input-window-config`、`cli-input-official-default`、`cli-input-official-capacity`。
 
 新增 provider/model 时，只添加具有官方 URL、核验日期和精确型号的记录；未核实的型号保持 unknown，或单独添加有理由的 local override。模型最大上下文不保证路由实际 cap，registry 不把最大值当默认。不复制主控百分比，数值超过窗口可显示超过 100%，只限制条形填充。成功安装的压缩清对应行输入读数，保留已知窗口；precompute 和 skip 不清。
 
-Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.effort`，`applied` 为 classic PostToolUse/Stop 的 `effort.level`，`configured` 为主控当前模型的配置后备：先读取环境变量 `CLAUDE_CODE_EFFORT_LEVEL`，合法档位优先于 settings；变量缺失、不合法或读取失败时，依次回退到 `modelSettings[model].effortLevel`、全局 `effortLevel` 与明确模型后缀。reload 后主控立即读取配置后备，无数据为 `—`；不硬编码 high，不扫描 agent 定义。`request` 与 `applied` 读数仍优先于 `configured`（更可靠），且各自保留来源记录。`configured` 只是配置档位，不能当作上游实际应用的证据，外部 provider 是否已应用不保证。只选取 settings 的这些 effort 字段与上述环境变量，不保存或打印其它 settings 或环境变量。
+Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.effort`，`applied` 为 classic PostToolUse/Stop 的 `effort.level`，`configured` 为主控当前模型的配置后备：先读取环境变量 `CLAUDE_CODE_EFFORT_LEVEL`，合法档位优先于 settings；变量缺失、不合法或读取失败时，依次回退到 `modelSettings[model].effortLevel`、全局 `effortLevel` 与明确模型后缀。reload 后主控立即读取配置后备，无数据为 `—`；不硬编码 high，不扫描 agent 定义。显式执行的 `/effort <level>` 是会话级配置来源：执行后立即更新主控显示；它不等于上游最终应用值，下一次 `request` 或 `applied` 证据可以接管显示。`request` 与 `applied` 读数仍优先于 `configured`（更可靠），且各自保留来源记录。`configured` 只是配置档位，不能当作上游实际应用的证据，外部 provider 是否已应用不保证。只选取 settings 的这些 effort 字段与上述环境变量，不保存或打印其它 settings 或环境变量。
 
 工作区为仓库根目录名（非 git 使用会话根目录名），附当前分支；detached HEAD 不显示分支，约每 5 秒刷新。显示使用 theme tokens：主控标签为 `claude`、子代理标签与行次要信息为 `inactive`；模型名为 `text`（普通文本，不着色）；有效 Avg/Last 数字为 `text`，缺值为 `inactive`，速率不以 `success` 表示；effort 按档位着色（数值为 `subtle`）；状态 idle/waiting/streaming 为 `inactive`，aborted 为 `warning`，error 为 `error`，usage unavailable 为 `warning`。工作区行为 `inactive`。颜色跟随 CLI 主题。
 
@@ -43,10 +43,10 @@ Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.eff
 /plugin install token-speed@claude-workflow-mods
 ```
 
-也可用固定 tag `token-speed-v0.6.0` 获取源文件，并从 checkout 加载：
+也可用固定 tag `token-speed-v0.6.1` 获取源文件，并从 checkout 加载：
 
 ```sh
-git clone --branch token-speed-v0.6.0 https://github.com/liuyejinghong/Claude-workflow.git
+git clone --branch token-speed-v0.6.1 https://github.com/liuyejinghong/Claude-workflow.git
 claude --plugin-dir ./Claude-workflow/mods/token-speed
 ```
 
