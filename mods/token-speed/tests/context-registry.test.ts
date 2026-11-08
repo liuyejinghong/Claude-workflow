@@ -45,6 +45,13 @@ test('registry loader reads plugin data once concurrently; a fresh module loader
   expect(lookupWindow(fallback, 'codex/gpt-6.1-terra')).toEqual({ window: 272000, source: 'configured' })
 })
 
+test('packaged Terra override wins while official default metadata stays intact', async () => {
+  const terra = { ...official, id: 'gpt-6.1-terra', aliases: [], defaultWindow: 500000 }
+  const registry = parseRegistry(registryJSON([official, terra],
+    [{ id: 'gpt-6.1-terra', aliases: [], window: 272000, reason: 'User-confirmed CLI window' }]))
+  expect(lookupWindow(registry, 'codex/gpt-6.1-terra')).toEqual({ window: 272000, source: 'configured' })
+  expect(registry.models.find(model => model.id === 'gpt-6.1-terra')?.defaultWindow).toBe(500000)
+})
 
 test('capacity-only official metadata is distinguished from defaults', async () => {
   const registry = parseRegistry(registryJSON([{ ...official, defaultWindow: null, contextWindow: 1000000 }]))
