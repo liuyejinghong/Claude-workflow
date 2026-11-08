@@ -42,6 +42,7 @@ test('registry loader reads plugin data once concurrently; a fresh module loader
   expect(fallback.fallback).toBe(true)
   expect(fallback.models).toEqual([])
   expect(lookupWindow(fallback, 'codex/gpt-6.1-sol').window).toBe(500000)
+  expect(lookupWindow(fallback, 'codex/gpt-6.1-terra')).toEqual({ window: 272000, source: 'configured' })
 })
 
 

@@ -637,6 +637,33 @@ for (const { label, held, expected, reject } of [
   })
 }
 
+test('explicit effort command updates the displayed configuration and preserves core output', OPTIONS, async ($, on) => {
+  setup(on, { model: 'codex/gpt-6.1-sol:high', settings: EFFORT_SETTINGS,
+    env: { CLAUDE_CODE_EFFORT_LEVEL: 'high' } })
+  let downstreamCalls = 0
+  let downstreamArgs: string[] = []
+  on('command.run', { command: 'effort' }, async (_$, e) => {
+    downstreamCalls++
+    downstreamArgs.push(e.args)
+    return { text: e.args ? 'Effort level set to max' : 'effort picker' }
+  })
+  await $.session.start(START)
+  expect((await main($)).effort).toBe('high')
+  expect((await main($)).effortSource).toBe('configured')
+  const picker = await $.command.run({ command: 'effort', args: '', origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 120 } })
+  expect(picker.text).toBe('effort picker')
+  expect((await main($)).effort).toBe('high')
+  expect((await main($)).effortSource).toBe('configured')
+  const rest = await $.command.run({ command: 'effort', args: 'max', origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 120 } })
+  expect(rest.text).toBe('Effort level set to max')
+  expect(downstreamCalls).toBe(2)
+  expect(downstreamArgs).toEqual(['', 'max'])
+  expect((await main($)).effort).toBe('max')
+  expect((await main($)).effortSource).toBe('configured')
+})
+
 test('request and applied effort outrank the environment across refreshes and leave the real request untouched', OPTIONS, async ($, on) => {
   const clock = setup(on, { model: 'codex/gpt-6.1-sol:high', settings: EFFORT_SETTINGS,
     env: { CLAUDE_CODE_EFFORT_LEVEL: 'max' }, usage: { startedAt: 0, context: { window: 272000 }, rateLimits: [] } })

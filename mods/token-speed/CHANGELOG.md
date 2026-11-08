@@ -1,5 +1,13 @@
 # token-speed Changelog
 
+## 0.6.1
+
+对应 tag `token-speed-v0.6.1`。
+
+- 修复 `/effort <level>` 显示滞后：显式 `/effort <level>` 是会话级配置来源，执行后立即更新主控显示；它不等于上游最终应用值，下一次 `request`/`applied` 证据可以接管显示，`configured` 仅代表用户请求档位。
+- 空 picker 时不猜测档位，保留核心命令输出。
+- 修正 `gpt-6.1-terra` 子代理上下文显示：新增用户确认的 272000 CLI override，token-speed 按当前 CLI 配置目标显示；保留官方 Terra Codex 默认 500000 元数据。该 override 不是 provider/API 最大上下文。registry 读取失败时也保留 Terra 的 272000 后备 override。
+
 ## 0.6.0
 
 对应 tag `token-speed-v0.6.0`。

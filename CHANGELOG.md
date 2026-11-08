@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+## Mod 发布：token-speed 0.6.1 - 2026-11-08
+
+- 修复 `/effort` 显示滞后：显式 `/effort <level>` 执行后立即更新主控显示，空 picker 不猜测档位；并修正 `gpt-6.1-terra` 子代理上下文显示（新增用户确认的 272000 CLI override，保留官方 500000 元数据，registry 读取失败时同样保留后备 override）。详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.6.1` 说明），不改变编排仓库版本。
+
 ## 0.7.0 - 2026-11-01
 
 - 默认安装只提供五岗职责和 skill，不自动创建代理或角色卡。个人模型、顺序和 effort 不再预置，只在用户显式确认后配置。
