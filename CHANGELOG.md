@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+- 编排手册补充失败升级次数：第 1 次不达标先补合同，优先让原代理带着上下文续做；同一任务第 2 次不达标升级到能力更强的候选；最强可用候选连续 2 次不达标后，主控才亲自处理卡住的最小部分。派发合同新增停手条件与“第一行写状态”的回报格式；输出量大的验收检查可委托，由主控核对实际输出并抽查。
+- README 与[首页结构约定](docs/readme-structure.md)重写：恢复按岗位的模型类型建议，并写明只是建议、不要求使用列表中的模型；安装与案例部分按读者顺序重排。
+- 调研归档新增三份 2026-11-08 快照：[编码订阅套餐对比](docs/research/coding-subscriptions-2026-11-08.md)、[编排省 token 方法](docs/research/token-saving-orchestration-2026-11-08.md)、[Opus 5.5 与 Sonnet 5.5 主控对比](docs/research/opus-vs-sonnet-controller-2026-11-08.md)。
+
+## Mod 发布：token-speed 0.7.0 - 2026-11-09
+
+- 随包不再分发维护者本机的上下文 overrides，只保留官方 models 记录；registry 读取失败时也不再回退到这些本机值。新增 `contextOverrides` 本地设置，按“模型名=窗口”填写本机窗口，保存在本机设置中，不进入仓库。详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.7.0` 说明），不改变编排仓库版本。
+
 ## Mod 发布：token-speed 0.6.1 - 2026-11-08
 
 - 修复 `/effort` 显示滞后：显式 `/effort <level>` 执行后立即更新主控显示，空 picker 不猜测档位；并修正 `gpt-6.1-terra` 子代理上下文显示（新增用户确认的 272000 CLI override，保留官方 500000 元数据，registry 读取失败时同样保留后备 override）。详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.6.1` 说明），不改变编排仓库版本。

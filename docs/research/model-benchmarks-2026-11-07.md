@@ -4,7 +4,7 @@
 
 ## 范围与结论
 
-- 评估对象：`gpt-6.1-terra`（aipai）、`deepseek-v4.1-flash`（DeepSeek-V4.1-Flash-1017）、`glm-5.3`、`glm-5.3-flash`。
+- 评估对象：`gpt-6.1-terra`（第三方中转）、`deepseek-v4.1-flash`（DeepSeek-V4.1-Flash-1017）、`glm-5.3`、`glm-5.3-flash`。
 - 对照对象：`gpt-6.1-sol`、`gpt-6-astra`（已停用，仅保留评分对照）。
 - 当日角色卡：worker / engineer 以 Terra 为首选、DeepSeek 第二、GLM-5.3 第三；reviewer 以 GLM-5.3 首选、DeepSeek 第二；researcher 以 DeepSeek 首选、GLM-5.3 第二；editor 以 GLM-5.3 首选、DeepSeek 第二；GLM-5.3-Flash 全部 priority 0。
 - 结论：GLM-5.3-Flash 没有通用岗位位置，维持停用；唯一可考虑的窄位是 researcher 的图片/文档抽取备用（priority 3，必须人工复核、不得无人值守）。DeepSeek 适合执行与调研，GLM-5.3 适合审查与中文，Terra 适合困难实现。
@@ -19,7 +19,7 @@
 版本核对：
 
 - `glm-5.3-flash` 指 Z.ai 的 GLM-5.3-Flash（320B total / 18B active）；`glm-5.3-flashx` 是另一个更贵的变体，不能混用。没有公开的 `glm-5.3-flash-trial` 模型 ID；Trial 更像 Coding Plan 试用卡。
-- `deepseek-v4.1-flash` 当前对应 1017 checkpoint；`deepseek-v4-pro`、`deepseek-v4-flash`（旧版）和 `deepseek-flash` 是不同路由或旧版本。
+- `deepseek-v4.1-flash` 当前对应 1017 checkpoint；`deepseek-v4-pro`、`deepseek-v4-flash`（旧版）和 `deepseek-flash` 是不同路由或旧版本。（2026-11-08 修正：见 model-benchmarks-2026-11-08.md）
 - `gpt-6.1-terra` 的官方上下文是 1.05M，最大输入 922K，最大输出 128K；Codex 目录的默认 `context_window` 是 500K，最大可配置 872K。
 - 不同 harness 的 Terminal-Bench、SWE-bench 分数不能直接相减；下表把来源和口径放在同一行，跨行比较只作方向。
 
@@ -51,7 +51,7 @@
 - 定位：GPT-6.1 系列的快速档，支持文本+图片，推理档 none/low/medium/high/xhigh/max/ultra。
 - 官方：上下文 1.05M，最大输入 922K，最大输出 128K；$1 输入 / $5 输出，缓存输入 $0.05。
 - 长上下文计费：输入超过 **272K** 后，整个请求按 **2× 输入/缓存、1.5× 输出** 计费；不是 500K。500K 是 Codex 的默认上下文窗口。
-- 本地：`aipai/gpt-6.1-terra` 可通；Claude Code 里把模型窗口压到 272K 以避开长上下文档费，`[1m]` 模型不受影响。
+- 本地：第三方中转的 `gpt-6.1-terra` 可通；Claude Code 里把模型窗口压到 272K 以避开长上下文档费，`[1m]` 模型不受影响。
 - 来源：[OpenAI 定价](https://developers.openai.com/api/docs/pricing)、[Terra 模型页](https://developers.openai.com/api/docs/models/gpt-6.1-terra)、[Codex models.json](https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json)。
 
 ### DeepSeek V4.1 Flash
@@ -110,7 +110,7 @@
 | DeepSeek V4.1 Flash | 93,477 | 215 | 2.1s | 0.05% | 2026-10-17 起 |
 | GLM-5.3 | 13,923 | 72–88 | 3.5–3.8s | 0.01–0.21% | 视路由/快照 |
 | GLM-5.3-Flash | 1,962 | 51 | 4.4s | ~0% | 近期 ZCode 路由 |
-| Terra（aipai） | 5 | 样本不足 | — | 0% | 2026-11-07 新接入 |
+| Terra（第三方中转） | 5 | 样本不足 | — | 0% | 2026-11-07 新接入 |
 
 - 当前 Claude Code：`CLAUDE_CODE_MAX_CONTEXT_TOKENS=272000`（只影响无 `[1m]` 的模型，Terra）；`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`（`[1m]` 模型仍可用到 500K）。
 - 已验证：Terra 的 `contextWindow` 为 272000；DeepSeek `[1m]` 仍为 1000000；把窗口压到 200K 的对照测试中，压缩在 preTokens 210K 触发。
