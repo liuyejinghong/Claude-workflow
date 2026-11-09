@@ -4,7 +4,7 @@
 
 日期：2026-10-29
 
-状态：提案，未实施/未跑对比
+状态：不采纳（2026-11-08）。主控成本远高于子代理，放宽委托的成本收益不成立；保留强制委托，改为在[编排手册](../../skills/multi-model-orchestration/SKILL.md)中补充失败升级次数、停手条件和回报格式。下文作为历史方案保留，不再执行其中的对比计划。
 
 仓库基线：正式版 Claude-workflow 0.6.0，`main`，提交 `8245939849df05c23705d44c7efa0710e14bb4d0`。
 
@@ -62,9 +62,9 @@
 
 继续使用现有原生 agents、五岗角色卡、安装器和 [token-speed](../../mods/token-speed/README.md)；不恢复已归档 runtime，也不引入新调度器。现有协议见[编排手册](../../skills/multi-model-orchestration/SKILL.md)，卡的结构和筛选见[角色卡参考](../../skills/multi-model-orchestration/references/role-cards.md)，岗位合同见[岗位定义](../../skills/multi-model-orchestration/assets/roles.json)。
 
-以下只是 2026-10-29 的本机快照，不是通用默认，也不是其他会话的有效环境证明。本机 `/Users/ethan/.claude/orchestration.json` 中，worker 的启用候选以 Terra 排在 DeepSeek 前，researcher 以 DeepSeek 排在 GLM-Flash 前，reviewer 以 Sol 排在 Astra 前；MiniMax free 与 DeepSeek free 在相关岗位停用。实际选人仍须检查当前卡、工具目录和职责限制。
+以下只是 2026-10-29 的本机快照，不是通用默认，也不是其他会话的有效环境证明。本机 `~/.claude/orchestration.json` 中，worker 的启用候选以 Terra 排在 DeepSeek 前，researcher 以 DeepSeek 排在 GLM-Flash 前，reviewer 以 Sol 排在 Astra 前；MiniMax free 与 DeepSeek free 在相关岗位停用。实际选人仍须检查当前卡、工具目录和职责限制。
 
-同一快照的 engineer 卡把 Terra 排在 Sol 前，但 Terra 的硬职责不支持高风险实施；建议后续清理岗位与候选的适配，不能仅凭排序宣称已经发生错误派发。[首页困难实现建议](../../README.md#快速开始)把 Astra 描述为前面不足时升级，而[个人模型分工](../../examples/magpie/model-selection.md)与现有角色定义把它定位为独立审查第二候选；建议未来同步文档，本次不改首页其他内容。
+同一快照的 engineer 卡把 Terra 排在 Sol 前，但 Terra 的硬职责不支持高风险实施；建议后续清理岗位与候选的适配，不能仅凭排序宣称已经发生错误派发。当时首页的困难实现建议把 Astra 描述为前面不足时升级，而[个人模型分工](../../examples/magpie/model-selection.md)与现有角色定义把它定位为独立审查第二候选；建议未来同步文档，本次不改首页其他内容。
 
 ## 未来实施顺序与影响范围
 
@@ -75,7 +75,7 @@
 
 未来可能涉及的对象与验收：
 
-- 本机 `/Users/ethan/.claude/CLAUDE.md` 是需要另行授权的安装对象，仓库提交不会自动改变它；确认有效 global 中旧强制委托条款已按批准范围替换，其他稳定原则保留。
+- 本机 `~/.claude/CLAUDE.md` 是需要另行授权的安装对象，仓库提交不会自动改变它；确认有效 global 中旧强制委托条款已按批准范围替换，其他稳定原则保留。
 - 仓库[编排手册](../../skills/multi-model-orchestration/SKILL.md)、[岗位定义](../../skills/multi-model-orchestration/assets/roles.json)与[角色卡参考](../../skills/multi-model-orchestration/references/role-cards.md)可能需要去重；检查职责限制、交接、失败处理与安装路径仍完整。
 - 本机角色卡和[个人模型分工](../../examples/magpie/model-selection.md)可在单独授权后清理适配与说明；确认候选排序与硬职责一致，首页相关说法另行同步。
 - 安装器和五岗角色 JSON schema 初始保持不变；如后续认为必须修改，先重新明确合同。验收应确认现有安装、卡读取和必要产品检查仍正常，保留实际输出。
