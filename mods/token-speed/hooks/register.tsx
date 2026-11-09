@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import { fallbackRegistry, lookupWindow, registryLoader } from './context-registry'
+import { fallbackRegistry, lookupWindow, parseLocalOverrides, registryLoader, withLocalOverrides } from './context-registry'
 import { MAGPIE_METRIC, magpieOrigin, queryRows, requestModel, matchCandidates, uniqueMatches, usageCounts, rememberEvidence, pruneEvidence, SHARED_FINISH_MS } from './magpie'
 import type { Evidence } from './magpie'
 import type { AgentInfo, EngineInterface, Register, ThemeKey, Timer, TurnStepChunk, TurnStepResult } from 'claude-code'
@@ -713,7 +713,8 @@ function compactParts(r: TokenSpeedRow, label: string, narrowLabel: string, mode
   })
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  const local = parseLocalOverrides(typeof options.contextOverrides === 'string' ? options.contextOverrides : '')
   on('session.start', async ($, e, next) => {
     const heldEpoch = epoch
     const rest = await next(e)
@@ -730,7 +731,7 @@ export const register: Register = on => {
           return { ...state, session: { ...state.session, observationGeneration: lease } }
         })
       }
-      registry = await loadRegistry(() => $.fs.read(`${$.plugin.root}/data/model-contexts.json`))
+      registry = withLocalOverrides(await loadRegistry(() => $.fs.read(`${$.plugin.root}/data/model-contexts.json`)), local.overrides)
       await $.command.register({ name: 'tok-speed', description: '各代理 Last；本会话同请求模型共享24h Avg；reset 清空统计', argumentHint: '[reset]' }).catch(() => {})
       await mutate($, heldEpoch, state => ({ version: 2, session: state.session, rows: state.rows.map(r => {
         revision = Math.max(revision, r.revision)
@@ -944,12 +945,12 @@ export const register: Register = on => {
       }),
     ])
     return { text: [
-      'token-speed 0.6.1 · Magpie measured · 本 session、本插件实际观察到的请求 · 各代理 Last、同完整模型共享 Avg',
+      'token-speed 0.7.0 · Magpie measured · 本 session、本插件实际观察到的请求 · 各代理 Last、同完整模型共享 Avg',
       'Last：本代理、本完整请求模型最近完成且仍有效的可测速样本；等待、流中、失败或不可测速不清旧值。latest 单独显示最新请求 waiting/streaming/pending/measured/failed/unmeasurable/ambiguous/unavailable，Last 可来自此前请求。Avg：本 session 所有代理（含已结束）同完整请求模型最近 24h 的测速输出 token 总和 / 测速窗口总时长，严格按 Magpie 完成时间判窗，不取速度算术平均，不跨 session。',
       '依赖本地 Magpie 与 curl；优先 ANTHROPIC_BASE_URL 环境，其次 settings.env，只访问明确 loopback。无 shell GET 禁用 curlrc、代理和重定向，仅接受完整 HTTP 200 JSON；失败或缺少 curl 保持未知。只采纳本机普通 Claude 来源，排除用途、同步和远程转发标记；冲突候选仍参与歧义。session、agent、完整请求模型、step 时间窗口及 CLI input+cache_write/output/cache_read 三元组必须双向唯一；usage 缺失/0、deferred/retry 计数不一致为 —。computer=this 不能识别所有 LAN 直连；session id 非完整请求 id。q 不检索 native_session，自定义 X-Magpie-Session 覆盖时查不到则 —。',
       '口径与 Magpie measured Speed 一致：排除 TTFT，已知 reasoning 时使用正文及 first_text，只有有证据的可见 reasoning 才计全输出；hidden 无正文、短窗、burst、失败/取消/截断不计。只复现 Magpie 测量，不保证底层供应商真实推理 token 绝对准确；不使用本地字符估算或旧全程历史。',
-      'UI 保留 Last 与 Avg（窄屏 L=Last、A=Avg）；单位 tok/s。主控第一，活跃子代理各一行，工作区最后。effort 来源依次 request、applied、configured；主控 configured 优先 CLAUDE_CODE_EFFORT_LEVEL，其次模型/全局 settings 和明确后缀。Ctx 主控以 session.usage 为准；子代理最近 CLI uncached+cache读写输入，窗口 source 优先实际窗口、明确 override、官方 default/capacity、未知；官方 max 仅元数据。固定 10 格块状条，每格8档、80视觉档，相邻整数百分点可同形，数字保留1%精度。',
-      `context registry v${registry.version}${registry.fallback ? ' (load failed: confirmed overrides only)' : ''}`,
+      'UI 保留 Last 与 Avg（窄屏 L=Last、A=Avg）；单位 tok/s。主控第一，活跃子代理各一行，工作区最后。effort 来源依次 request、applied、configured；主控 configured 优先 CLAUDE_CODE_EFFORT_LEVEL，其次模型/全局 settings 和明确后缀。Ctx 主控以 session.usage 为准；子代理最近 CLI uncached+cache读写输入，窗口 source 优先实际窗口、明确 override、官方 default/capacity、未知；官方 max 仅元数据。固定 10 格块状条，每格8档，加空条共81种条形，相邻整数百分点可同形，数字保留1%精度。',
+      `context registry v${registry.version}${registry.fallback ? ' (load failed: bundled data unavailable)' : ''}${local.overrides.length > 0 ? ` · 本地 overrides ${local.overrides.length} 项` : ''}${local.ignored > 0 ? ` · 忽略非法本地项 ${local.ignored} 项` : ''}`,
       ...provenance, ...lines,
       ...(state.rows.some(r => r.models.length) ? [] : ['Last — · Avg — · 尚无本会话统计']),
       'reload 保留已认证 Magpie 样本及 Last 证据，旧 active 终止；reset active 时拒绝，成功清 samples/pending，/clear 清会话。按待匹配起点分组，单飞、最多5次节流重试、每遍最多8页每页500行、每批4秒；优先到期组，同期优先近期组。双扫校验已读完整前缀，覆盖范围内才复验旧样本，撤销 Last 时回退保留的更早有效样本或未知；范围外不撤销，无 pending 不查询。相对 period 依赖 loopback Magpie 与 CLI 同机墙钟，60秒余量涵盖4秒批次及普通时钟误差；无法核验超过余量的时钟偏差。工作索引最多4096条，保留pending/24h证据及仍可能冲突的过期非Last；完整Last留host参与CAS匹配，过期脱离工作容量。回收先保存单调时间水位；回拨至水位后4秒以内拒绝新认证。查询及CAS检查证据版本，变化放弃本批。宿主已发出的状态写入不可取消，跨截止或版本变化落地后按批次/字段撤销，保留后来请求状态；撤销前可能短暂可读。若恰逢模块重载且旧lease失效，迟到提交可能由新模块保留。',

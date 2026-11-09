@@ -1,7 +1,15 @@
 {
   "name": "token-speed",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "author": { "name": "Ethan" },
   "description": "主控与活跃子代理各一行显示 Last 和 24 小时 Avg 测速，依赖本机 Magpie 与 curl",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "contextOverrides": {
+      "type": "string",
+      "title": "本机模型上下文窗口",
+      "description": "仅保存在本机设置中，不会随插件分发。格式为“模型名=窗口”，多个用英文逗号、分号或换行分隔，例如 my-model=300000, another-model=1000000。窗口只作上下文百分比的分母，不是 provider 实际上限。",
+      "default": ""
+    }
+  }
 }

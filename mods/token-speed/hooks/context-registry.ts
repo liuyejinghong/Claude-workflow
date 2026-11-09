@@ -16,14 +16,8 @@ export type ContextOverride = { id: string; aliases: string[]; window: number; r
 export type ContextRegistry = { version: 1; models: OfficialContext[]; overrides: ContextOverride[]; fallback?: true }
 export type WindowReading = { window: number; source: 'configured' | 'official-default' | 'official-capacity' | 'unknown'; sourceURL?: string; date?: string }
 
-// Keep the already-confirmed user windows if the packaged registry cannot load.
-const FALLBACK_OVERRIDES: ContextOverride[] = [
-  { id: 'gpt-6.1-sol', aliases: [], window: 500000, reason: 'User-confirmed CLI window' },
-  { id: 'gpt-6.1-terra', aliases: [], window: 272000, reason: 'User-confirmed CLI window' },
-  { id: 'gpt-6-astra', aliases: [], window: 500000, reason: 'User-confirmed CLI window' },
-  { id: 'glm-5.3', aliases: [], window: 1000000, reason: 'User-confirmed CLI window' },
-  { id: 'glm-5.3-flash', aliases: [], window: 1000000, reason: 'User-confirmed CLI window' },
-]
+// Nothing local is packaged: a failed read yields no models and no overrides.
+const FALLBACK_OVERRIDES: ContextOverride[] = []
 const object = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const integer = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0
 const name = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9][a-z0-9._:-]*$/i.test(v)
@@ -86,6 +80,29 @@ export function parseRegistry(text: string): ContextRegistry {
 }
 export function fallbackRegistry(): ContextRegistry {
   return { version: 1, models: [], overrides: FALLBACK_OVERRIDES.map(v => ({ ...v, aliases: [...v.aliases] })), fallback: true }
+}
+// Local settings use "model=window", separated by commas, semicolons or newlines.
+// Invalid items are counted and skipped so one typo cannot void the whole option.
+export function parseLocalOverrides(text: string): { overrides: ContextOverride[]; ignored: number } {
+  const overrides = new Map<string, ContextOverride>()
+  let ignored = 0
+  for (const item of text.split(/[,;\n]/)) {
+    const entry = item.trim()
+    if (!entry) continue
+    const separator = entry.indexOf('=')
+    const id = separator < 0 ? '' : entry.slice(0, separator).trim()
+    const digits = separator < 0 ? '' : entry.slice(separator + 1).trim()
+    const window = /^\d+$/.test(digits) ? Number(digits) : Number.NaN
+    if (!name(id) || !integer(window)) { ignored++; continue }
+    const key = id.toLowerCase()
+    // Map.set keeps insertion order; a later duplicate replaces the value.
+    overrides.set(key, { id: key, aliases: [], window, reason: 'User-configured window (local setting)' })
+  }
+  return { overrides: [...overrides.values()], ignored }
+}
+// Local values come first, so lookupWindow prefers them over packaged overrides.
+export function withLocalOverrides(registry: ContextRegistry, overrides: ContextOverride[]): ContextRegistry {
+  return overrides.length === 0 ? registry : { ...registry, overrides: [...overrides, ...registry.overrides] }
 }
 export function lookupWindow(registry: ContextRegistry, canonicalModel: string | null): WindowReading {
   const tail = canonicalModel?.slice(canonicalModel.lastIndexOf('/') + 1).toLowerCase() ?? ''

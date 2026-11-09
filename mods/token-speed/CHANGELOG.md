@@ -1,5 +1,14 @@
 # token-speed Changelog
 
+## 0.7.0
+
+对应 tag `token-speed-v0.7.0`。
+
+- 随包 registry 不再分发维护者本机 overrides，只保留 25 条官方 models 记录。原随包的 7 条维护者本机窗口 overrides 已移除；registry 读取失败时也不再回退到这些值。
+- 新增 `contextOverrides` userConfig 选项：按 `模型名=窗口` 填写本机窗口，多个用英文逗号、分号或换行分隔，保存在本机设置中，不进入仓库。非法项单独忽略，重复模型名以最后一项为准，本地值优先于随包记录。
+- 迁移：如需自定义窗口，按格式写入 `contextOverrides`，例如 `my-model=300000`。窗口只是显示分母，不是 provider 实际上限。
+- 修正 README 中条形档位说明：10 格 × 8 个填充档位，加上空条共 81 种条形。
+
 ## 0.6.1
 
 对应 tag `token-speed-v0.6.1`。

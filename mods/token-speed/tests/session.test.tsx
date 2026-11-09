@@ -521,13 +521,56 @@ test('packaged registry loads once per module and official default follows each 
   expect(reads).toBe(1)
 })
 
-test('bad packaged registry is observational and preserves confirmed CLI overrides', OPTIONS, async ($, on) => {
+test('bad packaged registry is observational and leaves windows unknown', OPTIONS, async ($, on) => {
   const clock = setup(on, { registry: '{' })
   on('turn.step', async function* (_$, e) { await clock.sleep(500); return result(e) })
   await $.session.start(START)
   await finishAt(clock, consume($.turn.step({ ...request('codex/gpt-6.1-sol'), agentId: 'child' })), 500)
-  expect((await state($)).rows.find(r => r.id === 'child')?.context.window).toBe(500000)
-  expect((await command($)).text).toMatch('load failed: confirmed overrides only')
+  expect((await state($)).rows.find(r => r.id === 'child')?.context).toEqual({ tokens: 0, window: 0, percent: null, source: 'cli-input' })
+  expect((await command($)).text).toMatch('load failed: bundled data unavailable')
+})
+
+test('local contextOverrides set configured windows, ignore invalid items and win over official defaults',
+  { ...OPTIONS, options: { contextOverrides: ' gpt-6.1-terra = 272000 , glm-5.3=1000000;glm-5.3=900000;broken;glm-5.3=0' } }, async ($, on) => {
+  const registry = JSON.stringify({ version: 1, models: [
+    { id: 'gpt-6.1-terra', aliases: [], defaultWindow: 500000, maxWindow: 872000,
+      sourceURL: 'https://docs.example.com/models/gpt-6.1-terra', date: '2026-10-27' },
+    { id: 'glm-5.3', aliases: [], defaultWindow: null, contextWindow: 1000000,
+      sourceURL: 'https://docs.example.com/models/glm-5.3', date: '2026-10-09' },
+  ], overrides: [] })
+  const clock = setup(on, { registry })
+  on('turn.step', async function* (_$, e) {
+    await clock.sleep(500)
+    const r = result(e)
+    if (r.usage) r.usage.input_tokens = 100000
+    return r
+  })
+  await $.session.start(START)
+  await finishAt(clock, consume($.turn.step({ ...request('codex/gpt-6.1-terra', undefined, 0), agentId: 'child' })), 500)
+  expect((await state($)).rows.find(r => r.id === 'child')?.context).toEqual({ tokens: 100000, window: 272000, percent: 37, source: 'cli-input-window-config' })
+  await finishAt(clock, consume($.turn.step({ ...request('zcode/GLM-5.3', undefined, 1), agentId: 'child' })), 500)
+  expect((await state($)).rows.find(r => r.id === 'child')?.context).toEqual({ tokens: 100000, window: 900000, percent: 11, source: 'cli-input-window-config' })
+  const output = (await command($)).text
+  expect(output).toMatch('本地 overrides 2 项')
+  expect(output).toMatch('忽略非法本地项 2 项')
+})
+
+test('local contextOverrides still apply when the packaged registry cannot be read',
+  { ...OPTIONS, options: { contextOverrides: 'gpt-6.1-terra=272000' } }, async ($, on) => {
+  const clock = setup(on, { registry: '{' })
+  on('turn.step', async function* (_$, e) {
+    await clock.sleep(500)
+    const r = result(e)
+    if (r.usage) r.usage.input_tokens = 136000
+    return r
+  })
+  await $.session.start(START)
+  await finishAt(clock, consume($.turn.step({ ...request('codex/gpt-6.1-terra'), agentId: 'child' })), 500)
+  expect((await state($)).rows.find(r => r.id === 'child')?.context).toEqual({ tokens: 136000, window: 272000, percent: 50, source: 'cli-input-window-config' })
+  const output = (await command($)).text
+  expect(output).toMatch('load failed: bundled data unavailable')
+  expect(output).toMatch('本地 overrides 1 项')
+  expect(output).not.toMatch('忽略非法本地项')
 })
 
 test('partial session readings keep the last known main measurement and a model switch never blanks it', OPTIONS, async ($, on) => {
