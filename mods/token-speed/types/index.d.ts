@@ -63,7 +63,7 @@ export type TokenSpeedRow = {
   /** Observed request/applied effort, or an explicit configuration fallback. */
   effort: TokenSpeedEffort | null
   effortSource: 'configured' | 'request' | 'applied' | 'unknown'
-  /** Each loop owns its latest reading; child windows use overrides or Claude Code's compact window. */
+  /** Each loop owns its latest reading; main and child windows cap the model window with Claude Code's compact window. */
   context: TokenSpeedContextInfo
 }
 

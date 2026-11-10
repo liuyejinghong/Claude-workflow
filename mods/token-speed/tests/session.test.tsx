@@ -30,6 +30,9 @@ const ENV_REJECT: Plugin = { name: 'env-reject', register(on) {
     e.name === 'CLAUDE_CODE_EFFORT_LEVEL' ? (denied++, { deny: 'environment unavailable' }) : next(e))
   on('command.run', { command: 'env-reject-count' }, async () => ({ text: String(denied) }))
 } }
+const SETTINGS_REJECT: Plugin = { name: 'settings-reject', register(on) {
+  on('settings.read', async () => ({ deny: 'settings unavailable' }))
+} }
 const OPTIONS = { plugins: [PROBE] }
 const REJECTING = { plugins: [PROBE, ENV_REJECT] }
 async function command($: Engine, args = '') {
@@ -286,6 +289,8 @@ test('fixed 10-cell block meter: 67 and 68 share a fill but keep distinct intege
     expect((await ui.find({ type: 'Text', text: 'rest band' }))?.text).toBe('rest band')
     await ui.unmount()
   }
+  // The displayed percentage is recomputed from tokens/window, not taken from the session.
+  usage.context.tokens = 184960
   usage.context.percent = 68
   await clock.advance(1000)
   for (const columns of [120, 240]) {
@@ -608,6 +613,101 @@ test('partial session readings keep the last known main measurement and a model 
   expect((await main($)).context).toEqual(updated)
   await clock.advance(500)
   await pending
+})
+
+test('main denominator takes the smaller top-level compact window and recomputes the percentage', OPTIONS, async ($, on) => {
+  const clock = setup(on, { model: 'claude-fable-5-2[1m]', settings: { autoCompactWindow: 500000 },
+    usage: { startedAt: 0, context: { tokens: 250000, window: 1000000, percent: 25 }, rateLimits: [] } })
+  await $.session.start(START)
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual({ tokens: 250000, window: 500000, percent: 50,
+    source: 'cli-input-auto-compact-window' })
+})
+
+test('main denominator reads modelSettings for the complete session model', OPTIONS, async ($, on) => {
+  const clock = setup(on, { model: 'claude-sonnet-5-5[1m]', settings: { autoCompactWindow: 800000,
+    modelSettings: { 'claude-sonnet-5-5[1m]': { autoCompactWindow: 400000 } } },
+    usage: { startedAt: 0, context: { tokens: 250000, window: 1000000, percent: 25 }, rateLimits: [] } })
+  await $.session.start(START)
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual({ tokens: 250000, window: 400000, percent: 63,
+    source: 'cli-input-auto-compact-window' })
+})
+
+test('main window environment outranks model and top-level settings', OPTIONS, async ($, on) => {
+  const clock = setup(on, { model: 'claude-opus-5-5[1m]',
+    env: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: '300000' },
+    settings: { autoCompactWindow: 500000,
+      modelSettings: { 'claude-opus-5-5[1m]': { autoCompactWindow: 400000 } } },
+    usage: { startedAt: 0, context: { tokens: 240000, window: 1000000, percent: 24 }, rateLimits: [] } })
+  await $.session.start(START)
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual({ tokens: 240000, window: 300000, percent: 80,
+    source: 'cli-input-auto-compact-window' })
+})
+
+test('a configured window above the model window keeps the model window and session source', OPTIONS, async ($, on) => {
+  const clock = setup(on, { model: 'main-large-window-model', settings: { autoCompactWindow: 2000000 },
+    usage: { startedAt: 0, context: { tokens: 250000, window: 1000000, percent: 25 }, rateLimits: [] } })
+  await $.session.start(START)
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual({ tokens: 250000, window: 1000000, percent: 25, source: 'session' })
+})
+
+test('an auto main window keeps the session window and source while the percentage is recomputed', OPTIONS, async ($, on) => {
+  const clock = setup(on, { model: 'main-auto-window', settings: { autoCompactWindow: 'auto',
+    modelSettings: { 'main-auto-window': { autoCompactWindow: 'auto' } } },
+    usage: { startedAt: 0, context: { tokens: 250000, window: 1000000, percent: 99 }, rateLimits: [] } })
+  await $.session.start(START)
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual({ tokens: 250000, window: 1000000, percent: 25, source: 'session' })
+})
+
+test('a rejected main window settings read keeps the session window and source', { plugins: [PROBE, SETTINGS_REJECT] }, async ($, on) => {
+  const clock = setup(on, { model: 'main-reject-window',
+    usage: { startedAt: 0, context: { tokens: 250000, window: 1000000, percent: 26 }, rateLimits: [] } })
+  await $.session.start(START)
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual({ tokens: 250000, window: 1000000, percent: 25, source: 'session' })
+})
+
+test('a local window without tokens keeps the percentage unknown', OPTIONS, async ($, on) => {
+  const clock = setup(on, { model: 'main-unknown-tokens', settings: { autoCompactWindow: 500000 },
+    usage: { startedAt: 0, context: { window: 1000000 }, rateLimits: [] } })
+  await $.session.start(START)
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual({ tokens: null, window: 500000, percent: null,
+    source: 'cli-input-auto-compact-window' })
+})
+
+test('a changed main window configuration is picked up within the short refresh', OPTIONS, async ($, on) => {
+  const settings = { autoCompactWindow: 1500000 }
+  const clock = setup(on, { model: 'main-live-window', settings,
+    usage: { startedAt: 0, context: { tokens: 250000, window: 1000000, percent: 25 }, rateLimits: [] } })
+  await $.session.start(START)
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual({ tokens: 250000, window: 1000000, percent: 25, source: 'session' })
+  settings.autoCompactWindow = 500000
+  await clock.advance(7000)
+  expect((await main($)).context).toEqual({ tokens: 250000, window: 500000, percent: 50,
+    source: 'cli-input-auto-compact-window' })
+})
+
+test('a main model switch reads the new model window immediately', OPTIONS, async ($, on) => {
+  let model = 'main-switch-a[1m]'
+  const clock = setup(on, { settings: { modelSettings: {
+    'main-switch-a[1m]': { autoCompactWindow: 400000 },
+    'main-switch-b[1m]': { autoCompactWindow: 600000 },
+  } }, usage: { startedAt: 0, context: { tokens: 240000, window: 1000000, percent: 24 }, rateLimits: [] } })
+  on('session.model', async () => ({ value: model }))
+  await $.session.start(START)
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual({ tokens: 240000, window: 400000, percent: 60,
+    source: 'cli-input-auto-compact-window' })
+  model = 'main-switch-b[1m]'
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual({ tokens: 240000, window: 600000, percent: 40,
+    source: 'cli-input-auto-compact-window' })
 })
 
 test('unchanged configuration preserves the actual bare request bucket and an explicit switch still applies', OPTIONS, async ($, on) => {
