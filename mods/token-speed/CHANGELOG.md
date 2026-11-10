@@ -1,5 +1,15 @@
 # token-speed Changelog
 
+## 0.8.1
+
+对应 tag `token-speed-v0.8.1`。
+
+- 主控行的上下文分母改为模型窗口与本机 Claude Code 压缩窗口的较小值。模型窗口来自 `session.usage()`；本机窗口按主控当前完整模型名读取，顺序为 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`、settings 的 `modelSettings[模型].autoCompactWindow`、顶层 `autoCompactWindow`。因此新模型即使不在官方窗口表中，也会按本机压缩窗口显示，例如模型窗口 1M、本机压缩窗口 500k 时显示 500k。
+- 主控百分比改为按实际显示的分母由 tokens 重新四舍五入，不再直接采用 `session.usage()` 的 percent，所以可能与状态栏百分比不同。tokens 未知时百分比保持未知。
+- 实际采用本机窗口时来源记为 `cli-input-auto-compact-window`，否则保持 `session`。`"auto"`、非法值或读取失败按未配置处理；agent 定义的 `autoCompactWindow` 和 `contextOverrides` 仍不作用于主控行。
+- 主控配置在模型切换时立即重读，平时约每 5 秒刷新，读取失败只降级，不中断请求、测速或 hook 透传。
+- `/tok-speed` 命令文本和 README 同步主控分母、来源与状态栏差异说明。
+
 ## 0.8.0
 
 对应 tag `token-speed-v0.8.0`。

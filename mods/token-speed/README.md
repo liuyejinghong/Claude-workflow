@@ -1,4 +1,4 @@
-# token-speed 0.8.0
+# token-speed 0.8.1
 
 发布时在 Claude Code 2.1.322 上通过插件测试；更早版本未验证。本插件为 function-hooks mod，在提示框上方，主控与每个活跃子代理各用一行显示模型、effort、上下文与输出速率，工作区放在最后一行。只观察原有模型请求，不调用额外模型或 tokenizer。速率依赖本机 Magpie 和 `curl`，请求完成后通过引擎 process API 安全读取本地用量；分支通过同一 API 调用本机 git。
 
@@ -24,14 +24,16 @@
 
 进度条是固定 10 个终端 cell 的短矩形，轨道使用 theme `rate_limit_empty`，整格填充 `█`，尾部使用 `▏▎▍▌▋▊▉` 表示 1/8 cell。共有 81 种条形（10 格 × 8 个填充档位，加上空条），因此 0–100 的整数百分点不是每个都有不同的条形：相邻百分点可落在同一档（例如 67% 与 68% 的条形相同，但数字 `67%`、`68%` 不同）。宽屏也不扩展为长条。窄屏可省略条形，数值始终保持整数 1% 精度。填充固定使用 theme `rate_limit_fill`，不随占用变化，没有横向渐变；Ctx 数值用 `text`，未知占用用 `inactive`。未知占用只画轨道空条，并以 `—%` 或 `?` 明确标为未知，不能解释为 0%。
 
-主控上下文来自 `$.session.usage()`，与状态栏同口径，最近响应的 uncached + cache-read + cache-written 输入 tokens 除以窗口；首次响应或成功压缩后无读数显示 `—%/窗口`。已知读数不会被打回未知：缺少有效 tokens 的部分读数（窗口相同）与主控模型切换都会沿用上一次已知读数，只有成功压缩（主控）或整会话重置才清空，因此进度条不会在两次轮询之间闪回 `—%`。子代理输入量来自自己最近一次响应的 CLI usage，不累计多次请求。子代理分母优先反映 Claude Code 本机实际生效的压缩窗口，`data/model-contexts.json` 只提供官方容量参考，不联网刷新。取值顺序：
+主控上下文的输入 tokens 来自 `$.session.usage()`，为该读数中最近响应的 uncached + cache-read + cache-written 输入 tokens；分母取该读数里的模型窗口与本机 Claude Code 压缩窗口的较小值，百分比按这个分母由 tokens 重新四舍五入，不直接采用 session 给的 percent。因此主控百分比可能与状态栏不同：状态栏按模型窗口计算。首次响应或成功压缩后无读数显示 `—%/窗口`；tokens 未知时百分比保持 `—`。已知读数不会被打回未知：缺少有效 tokens 的部分读数（分母相同）与主控模型切换都会沿用上一次已知读数，只有成功压缩（主控）或整会话重置才清空，因此进度条不会在两次轮询之间闪回 `—%`。子代理输入量来自自己最近一次响应的 CLI usage，不累计多次请求。主控与子代理的分母都优先反映 Claude Code 本机实际生效的压缩窗口，`data/model-contexts.json` 只提供官方容量参考，不联网刷新。子代理取值顺序：
 
 1. 本机 `contextOverrides` 命中时，使用该值和来源 `cli-input-window-config`。
 2. 否则使用 Claude Code 的配置窗口：先读 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`；未设置或非法时读合并后 settings 的 `modelSettings[模型].autoCompactWindow`；再读顶层 `autoCompactWindow`。模型键完全相等时优先，去掉 `[1m]`、`:effort`、`(effort)` 后缀后相等也匹配。agent 定义里的 `autoCompactWindow` 只能把窗口压低，不能抬高。官方记录有已知容量（`maxWindow`、`contextWindow`、`defaultWindow` 依次取第一个可用值）时，再取两者较小值。来源记为 `cli-input-auto-compact-window`。
 3. 否则沿用官方默认或官方 capacity。
 4. 都没有时为未知。
 
-`CLAUDE_CODE_AUTO_COMPACT_WINDOW` 和 settings 的值是 `"auto"` 或非法整数时按未配置处理。插件在 `agent.spawn` 和约每 5 秒的 reconcile 重新读取本机配置，不按 250ms tick 读文件。任一读取失败只降到下一层，不中断请求、测速或 hook 透传。输入始终取自己最近一次 CLI response，主控仍以 `$.session.usage()` 为准。数据中的官方来源、核验日期和 registry 版本可通过 `/tok-speed` 查看。registry 读取或严格解析失败时官方表与随包 override 都为空；本机 `contextOverrides` 仍然生效。
+主控行使用同一组本机配置来源（`CLAUDE_CODE_AUTO_COMPACT_WINDOW`、`modelSettings[完整会话模型名].autoCompactWindow`、顶层 `autoCompactWindow`），但不读取 agent 定义，也不应用 `contextOverrides`；配置值只作为上限，实际分母取它与 `session.usage()` 模型窗口的较小值。配置缺失、为 `"auto"`、非法或读取失败时沿用模型窗口和来源 `session`；实际采用本机配置时来源为 `cli-input-auto-compact-window`。主控配置在模型切换时及约每 5 秒重读。
+
+`CLAUDE_CODE_AUTO_COMPACT_WINDOW` 和 settings 的值是 `"auto"` 或非法整数时按未配置处理。子代理的配置在 `agent.spawn` 和约每 5 秒的 reconcile 重新读取，主控在模型切换时及同一短周期重读，不按 250ms tick 读文件。任一读取失败只降到下一层，不中断请求、测速或 hook 透传。输入始终取自己最近一次 CLI response，主控的 tokens 与模型窗口仍以 `$.session.usage()` 为准。数据中的官方来源、核验日期和 registry 版本可通过 `/tok-speed` 查看。registry 读取或严格解析失败时官方表与随包 override 都为空；本机 `contextOverrides` 仍然生效。
 
 官方记录覆盖当前前沿型号，共 25 条（各条核验日期见 registry；`gpt-6.1-sol` 为 2026-10-12，`gpt-6.1-terra` 为 2026-10-27，其余为 2026-10-09）。Anthropic：`claude-haiku-5-5`、`claude-sonnet-5-5`、`claude-opus-5-5`、`claude-fable-5-1`、`claude-fable-5`、`claude-mythos-5-1`、`claude-mythos-5`、`claude-opus-5`、`claude-sonnet-5`、`claude-opus-4-8`、`claude-opus-4-7`、`claude-opus-4-6`、`claude-sonnet-4-6` 为共享输入输出上下文 1M，`claude-haiku-4-5`、`claude-sonnet-4-5` 为 200k。OpenAI：`gpt-6.1-sol` 为 Codex/Work 默认 500000 / max 1000000（Tibo 2026-10-12 公告），`gpt-6.1-terra` 为 Codex 官方默认 500000 / max 872000 并带 API 总上下文 1050000 元数据（官方 Codex models.json 与 API 文档，2026-10-27 核验）；没有本机 Claude Code 窗口配置或 `contextOverrides` 时，按官方默认 500000 显示。窗口数值都只是显示分母，不是 provider/API 最大上下文。`gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna` 仍为 Codex 官方默认 272000 / max 872000，其中 `gpt-6.1-sol` 与 `gpt-6-astra` 另带 API 总上下文 1050000 与 max input 922000 元数据。`glm-5.3`、`glm-5.3-flash`、registry 匹配名 `deepseek-v4.1-flash`（官方 ID `deepseek-flash`，aliases `deepseek-v4-flash`）、`deepseek-v4-pro`、`gemini-3.8-flash` 官网只给出容量且未声明默认/最大，按官方 capacity 记录；Gemini 的 1,048,576 是输入上限，输出上限 65,536 单独存在，不是共享窗口。本机 `contextOverrides` 与官方数据分开，不混作官方事实。旧版本曾随包两条本机窗口 overrides；0.7.0 起不再分发，有需要时请在本机选项中自行设置。匹配只用去渠道的 canonical 尾名及精确 aliases，不匹配子串，不把未知邻近型号映射到已知型号；不使用动态 `haiku`/`opus`/`sonnet` 别名，不因 `[1m]` 选择官方最大值。来源分别记录为 `cli-input-window-config`、`cli-input-auto-compact-window`、`cli-input-official-default`、`cli-input-official-capacity`。
 
@@ -69,10 +71,10 @@ fourth-model=1000000
 /plugin install token-speed@claude-workflow-mods
 ```
 
-也可用固定 tag `token-speed-v0.8.0` 获取源文件，并从 checkout 加载：
+也可用固定 tag `token-speed-v0.8.1` 获取源文件，并从 checkout 加载：
 
 ```sh
-git clone --branch token-speed-v0.8.0 https://github.com/liuyejinghong/Claude-workflow.git
+git clone --branch token-speed-v0.8.1 https://github.com/liuyejinghong/Claude-workflow.git
 claude --plugin-dir ./Claude-workflow/mods/token-speed
 ```
 
@@ -84,7 +86,7 @@ claude --plugin-dir ./Claude-workflow/mods/token-speed
 /reload-plugins
 ```
 
-升级到 0.5.0 会清除更早版本的估算测速历史，仅从插件实际观察到的请求开始统计。升级到 0.6.0 可复用 0.5.0 已保存、带完整证据的认证样本；Avg 改为汇总本会话所有代理（包括已结束）同完整请求模型最近 24 小时内的有效测速请求，不补录没有观察证据的旧请求。升级到 0.7.0 不再随包分发本机窗口设置，相关模型改用官方默认；如需自定义窗口，按上一节设置 `contextOverrides`。升级到 0.8.0 后，子代理分母改用 Claude Code 本机实际生效的压缩窗口；已有 `contextOverrides` 仍然优先，不需要迁移。安装后的插件由 Claude Code 加载；开发时请修改自己的 checkout，不要直接修改 `plugins/cache` 副本。
+升级到 0.5.0 会清除更早版本的估算测速历史，仅从插件实际观察到的请求开始统计。升级到 0.6.0 可复用 0.5.0 已保存、带完整证据的认证样本；Avg 改为汇总本会话所有代理（包括已结束）同完整请求模型最近 24 小时内的有效测速请求，不补录没有观察证据的旧请求。升级到 0.7.0 不再随包分发本机窗口设置，相关模型改用官方默认；如需自定义窗口，按上一节设置 `contextOverrides`。升级到 0.8.0 后，子代理分母改用 Claude Code 本机实际生效的压缩窗口；已有 `contextOverrides` 仍然优先，不需要迁移。升级到 0.8.1 后，主控分母改用模型窗口与本机压缩窗口的较小值，百分比可能比之前低（例如模型窗口 1M、本机压缩窗口 500k 时按 500k 显示），不需要迁移。安装后的插件由 Claude Code 加载；开发时请修改自己的 checkout，不要直接修改 `plugins/cache` 副本。
 
 ## 命令
 
