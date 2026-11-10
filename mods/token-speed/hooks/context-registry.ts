@@ -14,7 +14,7 @@ export type OfficialContext = {
 }
 export type ContextOverride = { id: string; aliases: string[]; window: number; reason: string }
 export type ContextRegistry = { version: 1; models: OfficialContext[]; overrides: ContextOverride[]; fallback?: true }
-export type WindowReading = { window: number; source: 'configured' | 'official-default' | 'official-capacity' | 'unknown'; sourceURL?: string; date?: string }
+export type WindowReading = { window: number; source: 'configured' | 'auto-compact' | 'official-default' | 'official-capacity' | 'unknown'; sourceURL?: string; date?: string }
 
 // Nothing local is packaged: a failed read yields no models and no overrides.
 const FALLBACK_OVERRIDES: ContextOverride[] = []
@@ -113,6 +113,13 @@ export function lookupWindow(registry: ContextRegistry, canonicalModel: string |
   return official ? { window: official.defaultWindow ?? official.contextWindow ?? 0,
     source: official.defaultWindow === null ? 'official-capacity' : 'official-default', sourceURL: official.sourceURL, date: official.date }
     : { window: 0, source: 'unknown' }
+}
+// The official capacity, when known, caps a locally configured window.
+export function officialCapacity(registry: ContextRegistry, canonicalModel: string | null): number | null {
+  const tail = canonicalModel?.slice(canonicalModel.lastIndexOf('/') + 1).toLowerCase() ?? ''
+  const matches = (entry: { id: string; aliases: string[] }) => entry.id === tail || entry.aliases.includes(tail)
+  const official = registry.models.find(matches)
+  return official ? official.maxWindow ?? official.contextWindow ?? official.defaultWindow ?? null : null
 }
 export function registryLoader(): (read: () => Promise<string>) => Promise<ContextRegistry> {
   let pending: Promise<ContextRegistry> | null = null
