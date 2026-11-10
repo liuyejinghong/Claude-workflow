@@ -63,7 +63,7 @@ export type TokenSpeedRow = {
   /** Observed request/applied effort, or an explicit configuration fallback. */
   effort: TokenSpeedEffort | null
   effortSource: 'configured' | 'request' | 'applied' | 'unknown'
-  /** Each loop owns its latest reading; child windows are explicit configuration. */
+  /** Each loop owns its latest reading; child windows use overrides or Claude Code's compact window. */
   context: TokenSpeedContextInfo
 }
 
@@ -73,7 +73,7 @@ export type TokenSpeedContextInfo = {
   /** Zero means unknown, never a guessed model/context cap. */
   window: number
   percent: number | null
-  source: 'session' | 'cli-input' | 'cli-input-window-config' | 'cli-input-official-default' | 'cli-input-official-capacity' | 'unknown'
+  source: 'session' | 'cli-input' | 'cli-input-window-config' | 'cli-input-auto-compact-window' | 'cli-input-official-default' | 'cli-input-official-capacity' | 'unknown'
 }
 
 export type TokenSpeedWorkspace = { name: string; branch: string | null }

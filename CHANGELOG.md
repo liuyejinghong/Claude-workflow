@@ -8,6 +8,10 @@
 - README 与[首页结构约定](docs/readme-structure.md)重写：恢复按岗位的模型类型建议，并写明只是建议、不要求使用列表中的模型；安装与案例部分按读者顺序重排。
 - 调研归档新增三份 2026-11-08 快照：[编码订阅套餐对比](docs/research/coding-subscriptions-2026-11-08.md)、[编排省 token 方法](docs/research/token-saving-orchestration-2026-11-08.md)、[Opus 5.5 与 Sonnet 5.5 主控对比](docs/research/opus-vs-sonnet-controller-2026-11-08.md)。
 
+## Mod 发布：token-speed 0.8.0 - 2026-11-11
+
+- 子代理行的上下文窗口改为优先读取 Claude Code 本机实际生效的压缩窗口：`CLAUDE_CODE_AUTO_COMPACT_WINDOW`、settings 的 `modelSettings[模型].autoCompactWindow` 或顶层 `autoCompactWindow`；agent 定义只能把窗口压低，官方记录有已知容量时取较小值。本机 `contextOverrides` 仍最优先。详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.8.0` 说明），不改变编排仓库版本。
+
 ## Mod 发布：token-speed 0.7.0 - 2026-11-09
 
 - 随包不再分发维护者本机的上下文 overrides，只保留官方 models 记录；registry 读取失败时也不再回退到这些本机值。新增 `contextOverrides` 本地设置，按“模型名=窗口”填写本机窗口，保存在本机设置中，不进入仓库。详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.7.0` 说明），不改变编排仓库版本。

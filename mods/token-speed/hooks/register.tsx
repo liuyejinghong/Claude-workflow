@@ -1,5 +1,6 @@
 import { atom, read, update } from 'claude-code'
-import { fallbackRegistry, lookupWindow, parseLocalOverrides, registryLoader, withLocalOverrides } from './context-registry'
+import { fallbackRegistry, lookupWindow, officialCapacity, parseLocalOverrides, registryLoader, withLocalOverrides } from './context-registry'
+import { composeWindow, normalizeModelName, readAgentWindow, readWindowConfig, windowFromConfig } from './local-window'
 import { MAGPIE_METRIC, magpieOrigin, queryRows, requestModel, matchCandidates, uniqueMatches, usageCounts, rememberEvidence, pruneEvidence, SHARED_FINISH_MS } from './magpie'
 import type { Evidence } from './magpie'
 import type { AgentInfo, EngineInterface, Register, ThemeKey, Timer, TurnStepChunk, TurnStepResult } from 'claude-code'
@@ -11,13 +12,51 @@ const TICK_MS = 250
 const AVG_WINDOW_MS = 24 * 60 * 60 * 1000
 const loadRegistry = registryLoader()
 let registry = fallbackRegistry()
-function childContext(model: string | null, tokens: number | null = null): TokenSpeedContextInfo {
-  const reading = lookupWindow(registry, model === null ? null : canonical(model))
-  const window = reading.window
+// Claude Code's effective compact window is re-read at agent.spawn and every few
+// reconciles, never per tick. Entries are keyed by model identity plus agent type.
+const LOCAL_WINDOW_RECONCILES = 5
+const configWindows = new Map<string, { window: number | null; stamp: number }>()
+const agentWindows = new Map<string, { window: number | null; stamp: number }>()
+const agentTypes = new Map<string, string>()
+let reconcileStamp = 0
+function localWindow(model: string | null, agentType: string | null): number | null {
+  if (model === null) return null
+  const key = normalizeModelName(model)
+  if (!key) return null
+  const config = configWindows.get(key)?.window ?? null
+  const agent = agentType ? agentWindows.get(`${key}\0${agentType}`)?.window ?? null : null
+  return composeWindow(config, agent)
+}
+async function refreshLocalWindows($: EngineInterface, model: string, agentType: string | null, force: boolean): Promise<void> {
+  const key = normalizeModelName(model)
+  if (!key) return
+  try {
+    const configHeld = configWindows.get(key)
+    if (force || !configHeld || reconcileStamp - configHeld.stamp >= LOCAL_WINDOW_RECONCILES) {
+      const config = await readWindowConfig($)
+      configWindows.set(key, { window: windowFromConfig(config, model), stamp: reconcileStamp })
+    }
+    if (agentType === null) return
+    const agentKey = `${key}\0${agentType}`
+    const agentHeld = agentWindows.get(agentKey)
+    if (force || !agentHeld || reconcileStamp - agentHeld.stamp >= LOCAL_WINDOW_RECONCILES) {
+      agentWindows.set(agentKey, { window: await readAgentWindow($, agentType), stamp: reconcileStamp })
+    }
+  } catch { /* A failed refresh leaves the previous reading; reads already catch individually. */ }
+}
+function childContext(model: string | null, tokens: number | null = null, agentType: string | null = null): TokenSpeedContextInfo {
+  const canonicalModel = model === null ? null : canonical(model)
+  const reading = lookupWindow(registry, canonicalModel)
+  // An explicit local override keeps its existing source and value.
+  const local = reading.source === 'configured' ? null : localWindow(canonicalModel, agentType)
+  const capacity = local === null ? null : officialCapacity(registry, canonicalModel)
+  const window = local === null ? reading.window : capacity === null ? local : Math.min(local, capacity)
+  const source = local === null ? reading.source : 'auto-compact'
   return { tokens, window, percent: tokens === null || window === 0 ? null : Math.round(tokens * 100 / window),
-    source: reading.source === 'configured' ? 'cli-input-window-config'
-      : reading.source === 'official-default' ? 'cli-input-official-default'
-        : reading.source === 'official-capacity' ? 'cli-input-official-capacity' : tokens === null ? 'unknown' : 'cli-input' }
+    source: source === 'configured' ? 'cli-input-window-config'
+      : source === 'auto-compact' ? 'cli-input-auto-compact-window'
+        : source === 'official-default' ? 'cli-input-official-default'
+          : source === 'official-capacity' ? 'cli-input-official-capacity' : tokens === null ? 'unknown' : 'cli-input' }
 }
 const emptyContext = (): TokenSpeedContextInfo => ({ tokens: null, window: 0, percent: null, source: 'unknown' })
 const row = (id: string): TokenSpeedRow => ({ id, description: '', running: false, currentModel: null,
@@ -112,6 +151,7 @@ function contextInfo(value: unknown): TokenSpeedContextInfo {
     window: finite(held.window) && held.window > 0 ? held.window : 0,
     percent: finite(held.percent) && held.percent >= 0 ? held.percent : null,
     source: held.source === 'session' || held.source === 'cli-input' || held.source === 'cli-input-window-config'
+      || held.source === 'cli-input-auto-compact-window'
       || held.source === 'cli-input-official-default' || held.source === 'cli-input-official-capacity' ? held.source : 'unknown' }
 }
 function workspaceValue(value: unknown): TokenSpeedWorkspace | null {
@@ -151,7 +191,7 @@ function normalize(value: unknown): TokenSpeedSnapshot {
       effortSource: item.effortSource === 'configured' || item.effortSource === 'request' || item.effortSource === 'applied'
         ? item.effortSource : 'unknown',
       context: item.id === 'main' ? contextInfo(item.context)
-        : childContext(typeof item.currentModel === 'string' ? item.currentModel : null, contextInfo(item.context).tokens) })
+        : childContext(typeof item.currentModel === 'string' ? item.currentModel : null, contextInfo(item.context).tokens, agentTypes.get(item.id) ?? null) })
   }
   return { version: 2, rows: [rows.find(r => r.id === 'main') ?? row('main'), ...rows.filter(r => r.id !== 'main')],
     session: sessionInfo(value.session) }
@@ -254,6 +294,15 @@ async function reconcile($: EngineInterface, adoptExisting = false): Promise<voi
     const guards = new Map(before.rows.map(r => [r.id, r.revision]))
     const agents = await $.agent.list() // A rejected list must not finish any row.
     if (heldEpoch !== epoch) return
+    reconcileStamp++
+    for (const agent of agents) {
+      if (agent.type) agentTypes.set(agent.id, agent.type)
+      if (agent.status !== 'running') continue
+      const known = before.rows.find(r => r.id === agent.id)?.currentModel
+      if (!known) continue
+      await refreshLocalWindows($, known, agent.type || null, false)
+      if (heldEpoch !== epoch) return
+    }
     const ended: { id: string; requestId: string | undefined }[] = []
     await mutate($, heldEpoch, state => {
       ended.length = 0 // update may retry after a version collision.
@@ -381,7 +430,8 @@ async function finish($: EngineInterface, active: ObservedRequest, result: TurnS
     const models = requestStatus(r, active.model, active.id, measurement)
     if (r.active?.id !== active.id) return models === r.models ? r : { ...r, models }
     return { ...r, models, context: active.loopId === 'main' ? r.context
-      : childContext(active.model, inputTokens !== null && finite(inputTokens) ? inputTokens : null),
+      : childContext(active.model, inputTokens !== null && finite(inputTokens) ? inputTokens : null,
+        agentTypes.get(active.loopId) ?? null),
       active: null, status: !completed ? 'aborted' : counts ? 'idle' : 'usage unavailable' }
   }))
 }
@@ -766,6 +816,10 @@ export const register: Register = (on, options) => {
     invalidateMeasurements()
     commandEffort = null
     activeRequests.clear()
+    configWindows.clear()
+    agentWindows.clear()
+    agentTypes.clear()
+    reconcileStamp = 0
     stopTimer()
     await observe(() => update($, snapshot, () => { const state = empty();
       return { ...state, session: { ...state.session, ...(observationGeneration ? { observationGeneration } : {}) } } }))
@@ -780,12 +834,16 @@ export const register: Register = (on, options) => {
       // Remote workflow agents have no local list/loop. Do not invent rows for them.
       const agents: AgentInfo[] = await $.agent.list()
       const local = agents.find(agent => agent.id === id)
+      const agentType = local?.type ?? e.subagentType
+      agentTypes.set(id, agentType)
+      await refreshLocalWindows($, rest.model, agentType, true)
+      if (heldEpoch !== epoch) return
       await mutate($, heldEpoch, state => {
         const existing = state.rows.find(r => r.id === id)
         if (!existing && local?.status !== 'running') return state
         return changeRow(state, id, r => ({ ...r, description: e.description,
           currentModel: r.currentModel ?? canonical(rest.model),
-          context: r.currentModel === null ? childContext(rest.model) : r.context,
+          context: r.currentModel === null ? childContext(rest.model, null, agentType) : r.context,
           effort: r.currentModel === null ? suffixEffort(rest.model) : r.effort,
           effortSource: r.currentModel === null ? suffixEffort(rest.model) === null ? 'unknown' : 'configured' : r.effortSource,
           running: existing ? r.running : true, seen: true }))
@@ -812,7 +870,7 @@ export const register: Register = (on, options) => {
         model = requestModel(e.model)
         const effort = requested ?? fallback
         return { ...r, running: true, currentModel: model, seen: true, turnId: e.turnId,
-          context: loopId === 'main' || model === r.currentModel ? r.context : childContext(model),
+          context: loopId === 'main' || model === r.currentModel ? r.context : childContext(model, null, agentTypes.get(loopId) ?? null),
           revision: startedRevision, models: withBucket(r, { ...bucketFor(r, model), latestStep: requestId, latestStatus: 'waiting' }), active: null, status: 'waiting', effort,
           effortSource: requested !== null ? 'request' : effort !== null ? 'configured' : 'unknown' }
       }))
@@ -904,7 +962,7 @@ export const register: Register = (on, options) => {
     const rest = await next(e)
     if (e.trigger !== 'precompute' && !('skip' in rest)) await observe(() => mutate($, heldEpoch, state => {
       const changed = changeRow(state, e.agentId ?? 'main', r => ({ ...r,
-        context: e.agentId === undefined ? emptyContext() : childContext(r.currentModel) }))
+        context: e.agentId === undefined ? emptyContext() : childContext(r.currentModel, null, agentTypes.get(e.agentId) ?? null) }))
       return e.agentId === undefined ? { ...changed, session: { ...state.session, context: emptyContext() } } : changed
     }))
     return rest
@@ -945,11 +1003,11 @@ export const register: Register = (on, options) => {
       }),
     ])
     return { text: [
-      'token-speed 0.7.0 · Magpie measured · 本 session、本插件实际观察到的请求 · 各代理 Last、同完整模型共享 Avg',
+      'token-speed 0.8.0 · Magpie measured · 本 session、本插件实际观察到的请求 · 各代理 Last、同完整模型共享 Avg',
       'Last：本代理、本完整请求模型最近完成且仍有效的可测速样本；等待、流中、失败或不可测速不清旧值。latest 单独显示最新请求 waiting/streaming/pending/measured/failed/unmeasurable/ambiguous/unavailable，Last 可来自此前请求。Avg：本 session 所有代理（含已结束）同完整请求模型最近 24h 的测速输出 token 总和 / 测速窗口总时长，严格按 Magpie 完成时间判窗，不取速度算术平均，不跨 session。',
       '依赖本地 Magpie 与 curl；优先 ANTHROPIC_BASE_URL 环境，其次 settings.env，只访问明确 loopback。无 shell GET 禁用 curlrc、代理和重定向，仅接受完整 HTTP 200 JSON；失败或缺少 curl 保持未知。只采纳本机普通 Claude 来源，排除用途、同步和远程转发标记；冲突候选仍参与歧义。session、agent、完整请求模型、step 时间窗口及 CLI input+cache_write/output/cache_read 三元组必须双向唯一；usage 缺失/0、deferred/retry 计数不一致为 —。computer=this 不能识别所有 LAN 直连；session id 非完整请求 id。q 不检索 native_session，自定义 X-Magpie-Session 覆盖时查不到则 —。',
       '口径与 Magpie measured Speed 一致：排除 TTFT，已知 reasoning 时使用正文及 first_text，只有有证据的可见 reasoning 才计全输出；hidden 无正文、短窗、burst、失败/取消/截断不计。只复现 Magpie 测量，不保证底层供应商真实推理 token 绝对准确；不使用本地字符估算或旧全程历史。',
-      'UI 保留 Last 与 Avg（窄屏 L=Last、A=Avg）；单位 tok/s。主控第一，活跃子代理各一行，工作区最后。effort 来源依次 request、applied、configured；主控 configured 优先 CLAUDE_CODE_EFFORT_LEVEL，其次模型/全局 settings 和明确后缀。Ctx 主控以 session.usage 为准；子代理最近 CLI uncached+cache读写输入，窗口 source 优先实际窗口、明确 override、官方 default/capacity、未知；官方 max 仅元数据。固定 10 格块状条，每格8档，加空条共81种条形，相邻整数百分点可同形，数字保留1%精度。',
+      'UI 保留 Last 与 Avg（窄屏 L=Last、A=Avg）；单位 tok/s。主控第一，活跃子代理各一行，工作区最后。effort 来源依次 request、applied、configured；主控 configured 优先 CLAUDE_CODE_EFFORT_LEVEL，其次模型/全局 settings 和明确后缀。Ctx 主控以 session.usage 为准；子代理最近 CLI uncached+cache读写输入。子代理窗口分母优先本机 contextOverrides；否则用 Claude Code 本机生效压缩窗口，依次为 CLAUDE_CODE_AUTO_COMPACT_WINDOW、settings 的 modelSettings[模型].autoCompactWindow（精确键优先，[1m] 与 effort 后缀规范化后相等也匹配）、顶层 autoCompactWindow，agent 定义的 autoCompactWindow 只能压低该窗口，若官方记录有已知容量再取 min，来源记为 cli-input-auto-compact-window；否则官方 default/capacity；都没有为未知。本机配置在 agent.spawn 和每约 5 秒的 reconcile 重新读取，读取失败逐层降级。官方 max 仅元数据。固定 10 格块状条，每格8档，加空条共81种条形，相邻整数百分点可同形，数字保留1%精度。',
       `context registry v${registry.version}${registry.fallback ? ' (load failed: bundled data unavailable)' : ''}${local.overrides.length > 0 ? ` · 本地 overrides ${local.overrides.length} 项` : ''}${local.ignored > 0 ? ` · 忽略非法本地项 ${local.ignored} 项` : ''}`,
       ...provenance, ...lines,
       ...(state.rows.some(r => r.models.length) ? [] : ['Last — · Avg — · 尚无本会话统计']),

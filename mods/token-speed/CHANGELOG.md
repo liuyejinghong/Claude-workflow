@@ -1,5 +1,15 @@
 # token-speed Changelog
 
+## 0.8.0
+
+对应 tag `token-speed-v0.8.0`。
+
+- 子代理行的上下文窗口改为优先读取 Claude Code 本机实际生效的压缩窗口。取值顺序：`CLAUDE_CODE_AUTO_COMPACT_WINDOW`；合并 settings 的 `modelSettings[模型].autoCompactWindow`（完全相等的键优先，去掉 `[1m]`、`:effort`、`(effort)` 后缀后相等也匹配）；顶层 `autoCompactWindow`。
+- agent 定义的 `autoCompactWindow` 只能把窗口压低。官方记录有已知容量时，取本机窗口与官方容量的较小值。新增来源 `cli-input-auto-compact-window`。
+- 本机 `contextOverrides` 仍最优先，来源保持 `cli-input-window-config`；不需要覆盖本机配置时可以留空。
+- 配置在 `agent.spawn` 和约每 5 秒的 reconcile 重新读取。单次读取失败只降级到下一层，不影响请求、测速和 hook 透传。
+- `/tok-speed` 命令文本、类型定义和 README 同步新的取值顺序与来源。
+
 ## 0.7.0
 
 对应 tag `token-speed-v0.7.0`。

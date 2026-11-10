@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { fallbackRegistry, lookupWindow, parseLocalOverrides, parseRegistry, registryLoader, withLocalOverrides } from '../hooks/context-registry'
+import { fallbackRegistry, lookupWindow, officialCapacity, parseLocalOverrides, parseRegistry, registryLoader, withLocalOverrides } from '../hooks/context-registry'
 
 const official = { id: 'verified-model', aliases: ['verified-alias'], defaultWindow: 200000,
   maxWindow: 1000000, sourceURL: 'https://docs.example.com/models/verified-model', date: '2026-10-09' }
@@ -86,4 +86,15 @@ test('capacity-only official metadata is distinguished from defaults', async () 
   const registry = parseRegistry(registryJSON([{ ...official, defaultWindow: null, contextWindow: 1000000 }]))
   expect(lookupWindow(registry, 'verified-model')).toEqual({ window: 1000000, source: 'official-capacity',
     sourceURL: official.sourceURL, date: official.date })
+})
+
+test('official capacity prefers maxWindow, then contextWindow, then defaultWindow, and is absent for unknown models', async () => {
+  const registry = parseRegistry(registryJSON([official]))
+  expect(officialCapacity(registry, 'provider/verified-alias')).toBe(1000000)
+  const capacityOnly = parseRegistry(registryJSON([{ ...official, defaultWindow: null, maxWindow: undefined, contextWindow: 800000 }]))
+  expect(officialCapacity(capacityOnly, 'verified-model')).toBe(800000)
+  const defaultOnly = parseRegistry(registryJSON([{ ...official, maxWindow: undefined }]))
+  expect(officialCapacity(defaultOnly, 'verified-model')).toBe(200000)
+  expect(officialCapacity(registry, 'provider/verified-model-neighbor')).toBeNull()
+  expect(officialCapacity(fallbackRegistry(), 'provider/verified-model')).toBeNull()
 })
