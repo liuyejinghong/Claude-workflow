@@ -150,4 +150,4 @@ cd Claude-workflow
 - 想让每个会话都带上委托约定：[常驻规则模板](templates/CLAUDE.md.snippet)
 - 委托策略的改进计划（已评估，未采纳）：[子代理编排收敛方案与验证计划](docs/plans/orchestration-simplification.md)
 
-版本：Claude-workflow 0.7.0，token-speed 0.8.1（tag `token-speed-v0.8.1`），两者独立发版。更新见 [CHANGELOG](CHANGELOG.md) 与 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)，许可证 [MIT](LICENSE)。
+版本：Claude-workflow 0.7.0，token-speed 0.8.2（tag `token-speed-v0.8.2`），两者独立发版。更新见 [CHANGELOG](CHANGELOG.md) 与 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)，许可证 [MIT](LICENSE)。

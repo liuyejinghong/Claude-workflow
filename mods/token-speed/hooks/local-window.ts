@@ -29,24 +29,35 @@ export function normalizeModelName(model: string): string {
   }
 }
 
-function entryWindow(entry: unknown): number | null {
-  return object(entry) ? parseWindowValue(entry.autoCompactWindow) : null
+// Claude Code stores per-model settings under canonical names without a
+// channel prefix, while hooks see provider-prefixed names. Prefer an exact
+// key, then an equal name after suffix stripping, then a bare key equal to the
+// model's final segment. A slash-bearing key never matches another channel.
+export function modelSettingsValue<T>(settings: unknown, model: string,
+  read: (entry: Record<string, unknown>) => T | null): T | null {
+  if (!object(settings) || !object(settings.modelSettings)) return null
+  const models = settings.modelSettings
+  const tiers: ((key: string) => boolean)[] = [key => key === model]
+  const normalized = normalizeModelName(model)
+  if (normalized) {
+    const segment = normalized.slice(normalized.lastIndexOf('/') + 1)
+    tiers.push(key => normalizeModelName(key) === normalized,
+      key => !key.includes('/') && normalizeModelName(key) === segment)
+  }
+  // A key without the wanted field falls through to the next tier.
+  for (const matches of tiers) {
+    for (const key of Object.keys(models)) {
+      if (!matches(key)) continue
+      const entry = models[key]
+      const found = object(entry) ? read(entry) : null
+      if (found !== null) return found
+    }
+  }
+  return null
 }
 
 export function modelSettingsWindow(settings: unknown, model: string): number | null {
-  if (!object(settings) || !object(settings.modelSettings)) return null
-  const models = settings.modelSettings
-  // An exact key outranks any key that only matches after suffix stripping.
-  const exact = entryWindow(models[model])
-  if (exact !== null) return exact
-  const normalized = normalizeModelName(model)
-  if (!normalized) return null
-  for (const key of Object.keys(models)) {
-    if (key === model || normalizeModelName(key) !== normalized) continue
-    const found = entryWindow(models[key])
-    if (found !== null) return found
-  }
-  return null
+  return modelSettingsValue(settings, model, entry => parseWindowValue(entry.autoCompactWindow))
 }
 
 export function topLevelWindow(settings: unknown): number | null {

@@ -8,6 +8,10 @@
 - README 与[首页结构约定](docs/readme-structure.md)重写：恢复按岗位的模型类型建议，并写明只是建议、不要求使用列表中的模型；安装与案例部分按读者顺序重排。
 - 调研归档新增三份 2026-11-08 快照：[编码订阅套餐对比](docs/research/coding-subscriptions-2026-11-08.md)、[编排省 token 方法](docs/research/token-saving-orchestration-2026-11-08.md)、[Opus 5.5 与 Sonnet 5.5 主控对比](docs/research/opus-vs-sonnet-controller-2026-11-08.md)。
 
+## Mod 发布：token-speed 0.8.2 - 2026-11-11
+
+- 修复 `modelSettings` 键匹配：主控与子代理的推理档位、压缩窗口现在能匹配不带渠道前缀的规范模型键（如 `claude-fable-5-2` 匹配 `factory/claude-fable-5-2:medium`）；带 `/` 的键仍不跨渠道匹配。详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.8.2` 说明），不改变编排仓库版本。
+
 ## Mod 发布：token-speed 0.8.1 - 2026-11-11
 
 - 主控行的上下文分母改为模型窗口与本机 Claude Code 压缩窗口的较小值，并按该分母重算百分比；`CLAUDE_CODE_AUTO_COMPACT_WINDOW`、`modelSettings[模型].autoCompactWindow`、顶层 `autoCompactWindow` 依次生效，`"auto"`、非法或读取失败时保持 session 原值。因此新模型无需官方窗口记录，主控百分比也可能与状态栏不同。详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.8.1` 说明），不改变编排仓库版本。

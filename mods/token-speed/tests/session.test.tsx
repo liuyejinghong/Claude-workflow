@@ -219,6 +219,31 @@ test('reload initializes main model-specific configuration effort and classic ap
   await ui.unmount()
 })
 
+test('main configuration matches a bare modelSettings effort key for a provider-prefixed model', OPTIONS, async ($, on) => {
+  setup(on, { model: 'factory/claude-fable-5-2:medium', settings: { effortLevel: 'high',
+    modelSettings: { 'claude-fable-5-2': { effortLevel: 'low' } } } })
+  await $.session.start(START)
+  expect((await main($)).effort).toBe('low')
+  expect((await main($)).effortSource).toBe('configured')
+})
+
+test('main configuration effort falls through a higher-priority key without a valid effortLevel', OPTIONS, async ($, on) => {
+  setup(on, { model: 'factory/claude-fable-5-2:medium', settings: { effortLevel: 'high',
+    modelSettings: { 'factory/claude-fable-5-2:medium': { effortLevel: 'ultra' },
+      'claude-fable-5-2': { effortLevel: 'low' } } } })
+  await $.session.start(START)
+  expect((await main($)).effort).toBe('low')
+  expect((await main($)).effortSource).toBe('configured')
+})
+
+test('main configuration does not borrow effort from a different bare model name', OPTIONS, async ($, on) => {
+  setup(on, { model: 'group/auto-claude-opus-5-5', settings: { effortLevel: 'high',
+    modelSettings: { 'claude-opus-5-5': { effortLevel: 'low' } } } })
+  await $.session.start(START)
+  expect((await main($)).effort).toBe('high')
+  expect((await main($)).effortSource).toBe('configured')
+})
+
 test('each child keeps latest CLI inputs and unknown denominator; only installed compaction clears it', OPTIONS, async ($, on) => {
   const clock = setup(on, { usage: { startedAt: 0, context: { tokens: 182240, window: 272000, percent: 67 }, rateLimits: [] } }, async () => [info('child')])
   on('turn.step', async function* (_$, e) {
@@ -631,6 +656,26 @@ test('main denominator reads modelSettings for the complete session model', OPTI
   await $.session.start(START)
   await clock.advance(1000)
   expect((await main($)).context).toEqual({ tokens: 250000, window: 400000, percent: 63,
+    source: 'cli-input-auto-compact-window' })
+})
+
+test('main denominator matches a bare modelSettings key for a provider-prefixed session model', OPTIONS, async ($, on) => {
+  const clock = setup(on, { model: 'factory/claude-fable-5-2:medium', settings: { autoCompactWindow: 800000,
+    modelSettings: { 'claude-fable-5-2': { autoCompactWindow: 400000 } } },
+    usage: { startedAt: 0, context: { tokens: 250000, window: 1000000, percent: 25 }, rateLimits: [] } })
+  await $.session.start(START)
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual({ tokens: 250000, window: 400000, percent: 63,
+    source: 'cli-input-auto-compact-window' })
+})
+
+test('a channel-prefixed alias is not matched to a bare modelSettings key', OPTIONS, async ($, on) => {
+  const clock = setup(on, { model: 'group/auto-claude-opus-5-5', settings: { autoCompactWindow: 600000,
+    modelSettings: { 'claude-opus-5-5': { autoCompactWindow: 400000 } } },
+    usage: { startedAt: 0, context: { tokens: 250000, window: 1000000, percent: 25 }, rateLimits: [] } })
+  await $.session.start(START)
+  await clock.advance(1000)
+  expect((await main($)).context).toEqual({ tokens: 250000, window: 600000, percent: 42,
     source: 'cli-input-auto-compact-window' })
 })
 
