@@ -1,6 +1,6 @@
 import { atom, read, update } from 'claude-code'
 import { fallbackRegistry, lookupWindow, officialCapacity, parseLocalOverrides, registryLoader, withLocalOverrides } from './context-registry'
-import { composeWindow, normalizeModelName, readAgentWindow, readWindowConfig, windowFromConfig } from './local-window'
+import { composeWindow, modelSettingsValue, normalizeModelName, readAgentWindow, readWindowConfig, windowFromConfig } from './local-window'
 import { MAGPIE_METRIC, magpieOrigin, queryRows, requestModel, matchCandidates, uniqueMatches, usageCounts, rememberEvidence, pruneEvidence, SHARED_FINISH_MS } from './magpie'
 import type { Evidence } from './magpie'
 import type { AgentInfo, EngineInterface, Register, ThemeKey, Timer, TurnStepChunk, TurnStepResult } from 'claude-code'
@@ -255,10 +255,9 @@ async function configuredEffort($: EngineInterface, model: string): Promise<Toke
   } catch { /* Fall through: the saved settings are still the configuration of record. */ }
   try {
     const settings = await $.settings.read()
-    const models = object(settings.modelSettings) ? settings.modelSettings : {}
-    const selected = models[model] ?? models[canonical(model)]
-    return effortValue(object(selected) ? selected.effortLevel : undefined)
-      ?? effortValue(settings.effortLevel) ?? suffixEffort(model)
+    // modelSettings keys are canonical names; request models carry channel prefixes.
+    const selected = modelSettingsValue(settings, model, entry => effortValue(entry.effortLevel))
+    return selected ?? effortValue(settings.effortLevel) ?? suffixEffort(model)
   } catch { return suffixEffort(model) }
 }
 const sameContext = (a: TokenSpeedContextInfo, b: TokenSpeedContextInfo): boolean =>
@@ -1029,11 +1028,11 @@ export const register: Register = (on, options) => {
       }),
     ])
     return { text: [
-      'token-speed 0.8.1 · Magpie measured · 本 session、本插件实际观察到的请求 · 各代理 Last、同完整模型共享 Avg',
+      'token-speed 0.8.2 · Magpie measured · 本 session、本插件实际观察到的请求 · 各代理 Last、同完整模型共享 Avg',
       'Last：本代理、本完整请求模型最近完成且仍有效的可测速样本；等待、流中、失败或不可测速不清旧值。latest 单独显示最新请求 waiting/streaming/pending/measured/failed/unmeasurable/ambiguous/unavailable，Last 可来自此前请求。Avg：本 session 所有代理（含已结束）同完整请求模型最近 24h 的测速输出 token 总和 / 测速窗口总时长，严格按 Magpie 完成时间判窗，不取速度算术平均，不跨 session。',
       '依赖本地 Magpie 与 curl；优先 ANTHROPIC_BASE_URL 环境，其次 settings.env，只访问明确 loopback。无 shell GET 禁用 curlrc、代理和重定向，仅接受完整 HTTP 200 JSON；失败或缺少 curl 保持未知。只采纳本机普通 Claude 来源，排除用途、同步和远程转发标记；冲突候选仍参与歧义。session、agent、完整请求模型、step 时间窗口及 CLI input+cache_write/output/cache_read 三元组必须双向唯一；usage 缺失/0、deferred/retry 计数不一致为 —。computer=this 不能识别所有 LAN 直连；session id 非完整请求 id。q 不检索 native_session，自定义 X-Magpie-Session 覆盖时查不到则 —。',
       '口径与 Magpie measured Speed 一致：排除 TTFT，已知 reasoning 时使用正文及 first_text，只有有证据的可见 reasoning 才计全输出；hidden 无正文、短窗、burst、失败/取消/截断不计。只复现 Magpie 测量，不保证底层供应商真实推理 token 绝对准确；不使用本地字符估算或旧全程历史。',
-      'UI 保留 Last 与 Avg（窄屏 L=Last、A=Avg）；单位 tok/s。主控第一，活跃子代理各一行，工作区最后。effort 来源依次 request、applied、configured；主控 configured 优先 CLAUDE_CODE_EFFORT_LEVEL，其次模型/全局 settings 和明确后缀。Ctx 主控 tokens 与模型窗口来自 session.usage，分母取该窗口与本机压缩窗口的较小值，percent 按显示分母重算；子代理最近 CLI uncached+cache读写输入。本机压缩窗口依次为 CLAUDE_CODE_AUTO_COMPACT_WINDOW、settings 的 modelSettings[模型].autoCompactWindow（精确键优先，[1m] 与 effort 后缀规范化后相等也匹配）、顶层 autoCompactWindow。主控按完整会话模型名查这些配置，不读 agent 定义，不应用 contextOverrides；实际采用本机窗口时来源记为 cli-input-auto-compact-window，否则保持 session。子代理另优先本机 contextOverrides；否则用该配置窗口，agent 定义的 autoCompactWindow 只能压低，若官方记录有已知容量再取 min，来源记为 cli-input-auto-compact-window；否则官方 default/capacity；都没有为未知。主控在模型切换时及每约 5 秒重读，子代理在 agent.spawn 和每约 5 秒的 reconcile 重读；读取失败逐层降级。官方 max 仅元数据。固定 10 格块状条，每格8档，加空条共81种条形，相邻整数百分点可同形，数字保留1%精度。',
+      'UI 保留 Last 与 Avg（窄屏 L=Last、A=Avg）；单位 tok/s。主控第一，活跃子代理各一行，工作区最后。effort 来源依次 request、applied、configured；主控 configured 优先 CLAUDE_CODE_EFFORT_LEVEL，其次模型/全局 settings（模型键按与压缩窗口相同的规则匹配）和明确后缀。Ctx 主控 tokens 与模型窗口来自 session.usage，分母取该窗口与本机压缩窗口的较小值，percent 按显示分母重算；子代理最近 CLI uncached+cache读写输入。本机压缩窗口依次为 CLAUDE_CODE_AUTO_COMPACT_WINDOW、settings 的 modelSettings[模型].autoCompactWindow（键完全相等优先，其次去 [1m] 与 effort 后缀后相等，最后匹配不带渠道前缀且与模型末段同名的键；带 / 的键不跨渠道）、顶层 autoCompactWindow。主控按完整会话模型名查这些配置，不读 agent 定义，不应用 contextOverrides；实际采用本机窗口时来源记为 cli-input-auto-compact-window，否则保持 session。子代理另优先本机 contextOverrides；否则用该配置窗口，agent 定义的 autoCompactWindow 只能压低，若官方记录有已知容量再取 min，来源记为 cli-input-auto-compact-window；否则官方 default/capacity；都没有为未知。主控在模型切换时及每约 5 秒重读，子代理在 agent.spawn 和每约 5 秒的 reconcile 重读；读取失败逐层降级。官方 max 仅元数据。固定 10 格块状条，每格8档，加空条共81种条形，相邻整数百分点可同形，数字保留1%精度。',
       `context registry v${registry.version}${registry.fallback ? ' (load failed: bundled data unavailable)' : ''}${local.overrides.length > 0 ? ` · 本地 overrides ${local.overrides.length} 项` : ''}${local.ignored > 0 ? ` · 忽略非法本地项 ${local.ignored} 项` : ''}`,
       ...provenance, ...lines,
       ...(state.rows.some(r => r.models.length) ? [] : ['Last — · Avg — · 尚无本会话统计']),

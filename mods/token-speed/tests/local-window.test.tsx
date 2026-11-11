@@ -93,7 +93,17 @@ test('top-level settings supply a child window with its own source and recompute
   expect((await loop($, 'child-a')).context).toEqual({ tokens: 150000, window: 300000, percent: 50,
     source: 'cli-input-auto-compact-window' })
   expect((await command($)).text).toMatch('cli-input-auto-compact-window')
-  expect((await command($)).text).toMatch('token-speed 0.8.1')
+  expect((await command($)).text).toMatch('token-speed 0.8.2')
+})
+
+test('a child window matches a bare modelSettings key for a provider-prefixed model', OPTIONS, async ($, on) => {
+  const world: World = { roster: [], models: {} }
+  const clock = setup(on, { settings: { modelSettings: {
+    'claude-fable-5-2': { autoCompactWindow: 400000 } } } }, world)
+  await $.session.start(START)
+  await spawn($, clock, world, 'bare-key', 'factory/claude-fable-5-2:medium')
+  expect((await loop($, 'bare-key')).context).toEqual({ tokens: null, window: 400000, percent: null,
+    source: 'cli-input-auto-compact-window' })
 })
 
 test('exact modelSettings keys outrank suffix-normalized keys and agent definitions only lower the result', OPTIONS, async ($, on) => {
@@ -228,6 +238,47 @@ test('model names normalize [1m] and effort suffixes while an exact settings key
   expect(modelSettingsWindow(settings, 'invalid-model')).toBeNull()
   expect(modelSettingsWindow(settings, 'zero-model')).toBeNull()
   expect(modelSettingsWindow({ modelSettings: 'nope' }, 'aipai/gpt-6.1-terra')).toBeNull()
+})
+
+test('bare modelSettings keys match a provider-prefixed model without crossing channels', () => {
+  const settings = { modelSettings: {
+    'claude-fable-5-2': { autoCompactWindow: 400000 },
+    'codex/gpt-6.1-terra': { autoCompactWindow: 300000 },
+    'claude-opus-5-5': { autoCompactWindow: 500000 },
+  } }
+  expect(modelSettingsWindow(settings, 'factory/claude-fable-5-2:medium')).toBe(400000)
+  expect(modelSettingsWindow(settings, 'factory/claude-fable-5-2')).toBe(400000)
+  expect(modelSettingsWindow(settings, 'codex/gpt-6.1-terra:high')).toBe(300000)
+  // A slash-bearing key stays on its own channel, and a bare key needs the same final segment.
+  expect(modelSettingsWindow(settings, 'aipai/gpt-6.1-terra')).toBeNull()
+  expect(modelSettingsWindow(settings, 'aipai/gpt-6.1-terra[1m]')).toBeNull()
+  expect(modelSettingsWindow(settings, 'group/auto-claude-opus-5-5')).toBeNull()
+})
+
+test('exact modelSettings keys outrank suffix-normalized keys, which outrank bare keys', () => {
+  const settings = { modelSettings: {
+    'claude-fable-5-2': { autoCompactWindow: 111000 },
+    'factory/claude-fable-5-2:low': { autoCompactWindow: 222000 },
+    'factory/claude-fable-5-2:medium': { autoCompactWindow: 333000 },
+  } }
+  expect(modelSettingsWindow(settings, 'factory/claude-fable-5-2:medium')).toBe(333000)
+  expect(modelSettingsWindow(settings, 'factory/claude-fable-5-2:high')).toBe(222000)
+})
+
+test('a higher-priority key without a valid field falls through to the next tier and then the top level', () => {
+  const settings = { autoCompactWindow: 500000, modelSettings: {
+    'factory/claude-fable-5-2:medium': { effortLevel: 'max' },
+    'factory/claude-fable-5-2:high': { autoCompactWindow: 'auto' },
+    'claude-fable-5-2': { autoCompactWindow: 400000 },
+  } }
+  expect(modelSettingsWindow(settings, 'factory/claude-fable-5-2:medium')).toBe(400000)
+  expect(windowFromConfig({ env: null, settings }, 'factory/claude-fable-5-2:medium')).toBe(400000)
+  const noWindow = { autoCompactWindow: 500000, modelSettings: {
+    'factory/claude-fable-5-2:medium': { effortLevel: 'max' },
+    'claude-fable-5-2': { effortLevel: 'low' },
+  } }
+  expect(modelSettingsWindow(noWindow, 'factory/claude-fable-5-2:medium')).toBeNull()
+  expect(windowFromConfig({ env: null, settings: noWindow }, 'factory/claude-fable-5-2:medium')).toBe(500000)
 })
 
 test('environment outranks model and top-level settings; invalid values fall through', () => {

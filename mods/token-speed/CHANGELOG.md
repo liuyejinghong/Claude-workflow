@@ -1,5 +1,13 @@
 # token-speed Changelog
 
+## 0.8.2
+
+对应 tag `token-speed-v0.8.2`。
+
+- 修复 `modelSettings` 键匹配：Claude Code 把 `/effort` 等按模型的设置保存在不带渠道前缀的规范名下（如 `claude-fable-5-2`），而插件观察到的模型名可能带渠道前缀和后缀（如 `factory/claude-fable-5-2:medium`）。现在主控与子代理的推理档位、压缩窗口都能匹配这类键，主控显示不再回退到顶层 `effortLevel`。
+- 匹配顺序：键完全相等；去掉 `[1m]`、`:effort`、`(effort)` 后缀后相等；键本身不含 `/` 且与模型规范化后末段同名。带 `/` 的键仍只在同一渠道内匹配，不做子串或模糊匹配；`group/auto-claude-opus-5-5` 不会匹配 `claude-opus-5-5`。更高优先级的键缺少所需字段的有效值时继续看下一级，最后才回退到顶层设置或模型后缀。
+- `/effort` 命令、`CLAUDE_CODE_EFFORT_LEVEL` 与窗口取值顺序不变；不需要迁移。
+
 ## 0.8.1
 
 对应 tag `token-speed-v0.8.1`。
