@@ -4,7 +4,7 @@ import { composeWindow, modelSettingsValue, normalizeModelName, readAgentWindow,
 import { MAGPIE_METRIC, magpieOrigin, queryRows, requestModel, matchCandidates, uniqueMatches, usageCounts, rememberEvidence, pruneEvidence, SHARED_FINISH_MS } from './magpie'
 import type { Evidence } from './magpie'
 import type { AgentInfo, EngineInterface, Register, ThemeKey, Timer, TurnStepChunk, TurnStepResult } from 'claude-code'
-import type { TokenSpeedActive, TokenSpeedContextInfo, TokenSpeedEffort, TokenSpeedMeasurementStatus, TokenSpeedModelStats, TokenSpeedRow,
+import type { TokenSpeedActive, TokenSpeedContextInfo, TokenSpeedEffort, TokenSpeedEffortLevel, TokenSpeedMeasurementStatus, TokenSpeedModelStats, TokenSpeedRow,
   TokenSpeedSample, TokenSpeedSessionInfo, TokenSpeedSnapshot, TokenSpeedStatus, TokenSpeedWorkspace } from '../types'
 
 const TICK_MS = 250
@@ -159,6 +159,11 @@ function effortValue(value: unknown): TokenSpeedEffort | null {
   if (typeof value === 'string' && ['low', 'medium', 'high', 'xhigh', 'max'].includes(value)) return value as TokenSpeedEffort
   return finite(value) && value >= 0 ? value : null
 }
+// Only the five command levels are persisted; numeric/applied effort is not a session configuration.
+function sessionEffortValue(value: unknown): TokenSpeedEffortLevel | null {
+  return value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max'
+    ? value : null
+}
 function contextInfo(value: unknown): TokenSpeedContextInfo {
   const held = object(value) ? value : {}
   return { tokens: finite(held.tokens) && held.tokens >= 0 ? held.tokens : null,
@@ -174,7 +179,9 @@ function workspaceValue(value: unknown): TokenSpeedWorkspace | null {
 }
 function sessionInfo(value: unknown): TokenSpeedSessionInfo {
   const held = object(value) ? value : {}
+  const commandEffort = sessionEffortValue(held.commandEffort)
   return { context: contextInfo(held.context), workspace: workspaceValue(held.workspace),
+    ...(commandEffort !== null ? { commandEffort } : {}),
     ...(typeof held.observationGeneration === 'string' ? { observationGeneration: held.observationGeneration } : {}),
     ...(finite(held.evidenceRetiredThrough) ? { evidenceRetiredThrough: held.evidenceRetiredThrough } : {}),
     ...(typeof held.configuredModel === 'string' ? { configuredModel: held.configuredModel } : {}) }
@@ -716,7 +723,11 @@ async function configuredCommandEffort($: EngineInterface, heldEpoch: number, va
   const effort = effortValue(value)
   if (effort === null || heldEpoch !== epoch) return
   commandEffort = effort
-  await mutate($, heldEpoch, state => changeRow(state, 'main', r => ({ ...r, effort, effortSource: 'configured', seen: true })))
+  const persisted = sessionEffortValue(value)
+  await mutate($, heldEpoch, state => {
+    const changed = changeRow(state, 'main', r => ({ ...r, effort, effortSource: 'configured', seen: true }))
+    return persisted === null ? changed : { ...changed, session: { ...changed.session, commandEffort: persisted } }
+  })
 }
 const humanWindow = (window: number): string =>
   window >= 1e6 ? `${(window / 1e6).toFixed(1)}M` : window >= 1e3 ? `${Math.round(window / 1e3)}k` : `${window}`
@@ -794,8 +805,8 @@ export const register: Register = (on, options) => {
     const rest = await next(e)
     await observe(async () => {
       if (heldEpoch !== epoch) return
-      if (observationGeneration === null) {
-        commandEffort = null
+      const firstObservation = observationGeneration === null
+      if (firstObservation) {
         const now = await $.clock.now()
         if (heldEpoch !== epoch) return
         observationGeneration = `${now}:${Math.random()}`
@@ -815,6 +826,11 @@ export const register: Register = (on, options) => {
       const heldSession = await $.session.id()
       const restored = await readState($)
       if (heldEpoch !== epoch || !holdsLease(restored)) return
+      // A valid session value belongs to this session's host state: restore it
+      // on the first observation after a reload. A new session starts from an
+      // empty snapshot, so the same read clears it.
+      // An /effort run during this restore already set the newer value.
+      if (firstObservation && commandEffort === null) commandEffort = restored.session.commandEffort ?? null
       sessionId = heldSession
       const restoredAt = await $.clock.now()
       if (heldEpoch !== epoch || !holdsLease(await readState($))) return
@@ -995,7 +1011,10 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'effort' }, async ($, e, next) => {
     const heldEpoch = epoch
     const rest = await next(e)
-    await observe(() => configuredCommandEffort($, heldEpoch, e.args.trim()))
+    // The picker returns no args; its choice is reported in the command text.
+    const selected = effortValue(e.args.trim()) ?? effortValue(rest.text
+      ?.match(/\bSet effort level to (low|medium|high|xhigh|max)\b/i)?.[1]?.toLowerCase())
+    if (selected !== null) await observe(() => configuredCommandEffort($, heldEpoch, selected))
     return rest
   })
   on('command.run', { command: 'tok-speed' }, async ($, e) => {
@@ -1028,11 +1047,11 @@ export const register: Register = (on, options) => {
       }),
     ])
     return { text: [
-      'token-speed 0.8.2 · Magpie measured · 本 session、本插件实际观察到的请求 · 各代理 Last、同完整模型共享 Avg',
+      'token-speed 0.8.3 · Magpie measured · 本 session、本插件实际观察到的请求 · 各代理 Last、同完整模型共享 Avg',
       'Last：本代理、本完整请求模型最近完成且仍有效的可测速样本；等待、流中、失败或不可测速不清旧值。latest 单独显示最新请求 waiting/streaming/pending/measured/failed/unmeasurable/ambiguous/unavailable，Last 可来自此前请求。Avg：本 session 所有代理（含已结束）同完整请求模型最近 24h 的测速输出 token 总和 / 测速窗口总时长，严格按 Magpie 完成时间判窗，不取速度算术平均，不跨 session。',
       '依赖本地 Magpie 与 curl；优先 ANTHROPIC_BASE_URL 环境，其次 settings.env，只访问明确 loopback。无 shell GET 禁用 curlrc、代理和重定向，仅接受完整 HTTP 200 JSON；失败或缺少 curl 保持未知。只采纳本机普通 Claude 来源，排除用途、同步和远程转发标记；冲突候选仍参与歧义。session、agent、完整请求模型、step 时间窗口及 CLI input+cache_write/output/cache_read 三元组必须双向唯一；usage 缺失/0、deferred/retry 计数不一致为 —。computer=this 不能识别所有 LAN 直连；session id 非完整请求 id。q 不检索 native_session，自定义 X-Magpie-Session 覆盖时查不到则 —。',
       '口径与 Magpie measured Speed 一致：排除 TTFT，已知 reasoning 时使用正文及 first_text，只有有证据的可见 reasoning 才计全输出；hidden 无正文、短窗、burst、失败/取消/截断不计。只复现 Magpie 测量，不保证底层供应商真实推理 token 绝对准确；不使用本地字符估算或旧全程历史。',
-      'UI 保留 Last 与 Avg（窄屏 L=Last、A=Avg）；单位 tok/s。主控第一，活跃子代理各一行，工作区最后。effort 来源依次 request、applied、configured；主控 configured 优先 CLAUDE_CODE_EFFORT_LEVEL，其次模型/全局 settings（模型键按与压缩窗口相同的规则匹配）和明确后缀。Ctx 主控 tokens 与模型窗口来自 session.usage，分母取该窗口与本机压缩窗口的较小值，percent 按显示分母重算；子代理最近 CLI uncached+cache读写输入。本机压缩窗口依次为 CLAUDE_CODE_AUTO_COMPACT_WINDOW、settings 的 modelSettings[模型].autoCompactWindow（键完全相等优先，其次去 [1m] 与 effort 后缀后相等，最后匹配不带渠道前缀且与模型末段同名的键；带 / 的键不跨渠道）、顶层 autoCompactWindow。主控按完整会话模型名查这些配置，不读 agent 定义，不应用 contextOverrides；实际采用本机窗口时来源记为 cli-input-auto-compact-window，否则保持 session。子代理另优先本机 contextOverrides；否则用该配置窗口，agent 定义的 autoCompactWindow 只能压低，若官方记录有已知容量再取 min，来源记为 cli-input-auto-compact-window；否则官方 default/capacity；都没有为未知。主控在模型切换时及每约 5 秒重读，子代理在 agent.spawn 和每约 5 秒的 reconcile 重读；读取失败逐层降级。官方 max 仅元数据。固定 10 格块状条，每格8档，加空条共81种条形，相邻整数百分点可同形，数字保留1%精度。',
+      'UI 保留 Last 与 Avg（窄屏 L=Last、A=Avg）；单位 tok/s。主控第一，活跃子代理各一行，工作区最后。effort 来源依次 request、applied、configured；主控 configured 优先本会话显式 `/effort`（参数或选择框；保存在会话状态，重载后恢复，新会话或 session 结束清除），其次 CLAUDE_CODE_EFFORT_LEVEL，其次模型/全局 settings（模型键按与压缩窗口相同的规则匹配）和明确后缀。Ctx 主控 tokens 与模型窗口来自 session.usage，分母取该窗口与本机压缩窗口的较小值，percent 按显示分母重算；子代理最近 CLI uncached+cache读写输入。本机压缩窗口依次为 CLAUDE_CODE_AUTO_COMPACT_WINDOW、settings 的 modelSettings[模型].autoCompactWindow（键完全相等优先，其次去 [1m] 与 effort 后缀后相等，最后匹配不带渠道前缀且与模型末段同名的键；带 / 的键不跨渠道）、顶层 autoCompactWindow。主控按完整会话模型名查这些配置，不读 agent 定义，不应用 contextOverrides；实际采用本机窗口时来源记为 cli-input-auto-compact-window，否则保持 session。子代理另优先本机 contextOverrides；否则用该配置窗口，agent 定义的 autoCompactWindow 只能压低，若官方记录有已知容量再取 min，来源记为 cli-input-auto-compact-window；否则官方 default/capacity；都没有为未知。主控在模型切换时及每约 5 秒重读，子代理在 agent.spawn 和每约 5 秒的 reconcile 重读；读取失败逐层降级。官方 max 仅元数据。固定 10 格块状条，每格8档，加空条共81种条形，相邻整数百分点可同形，数字保留1%精度。',
       `context registry v${registry.version}${registry.fallback ? ' (load failed: bundled data unavailable)' : ''}${local.overrides.length > 0 ? ` · 本地 overrides ${local.overrides.length} 项` : ''}${local.ignored > 0 ? ` · 忽略非法本地项 ${local.ignored} 项` : ''}`,
       ...provenance, ...lines,
       ...(state.rows.some(r => r.models.length) ? [] : ['Last — · Avg — · 尚无本会话统计']),

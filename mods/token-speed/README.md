@@ -1,4 +1,4 @@
-# token-speed 0.8.2
+# token-speed 0.8.3
 
 发布时在 Claude Code 2.1.322 上通过插件测试；更早版本未验证。本插件为 function-hooks mod，在提示框上方，主控与每个活跃子代理各用一行显示模型、effort、上下文与输出速率，工作区放在最后一行。只观察原有模型请求，不调用额外模型或 tokenizer。速率依赖本机 Magpie 和 `curl`，请求完成后通过引擎 process API 安全读取本地用量；分支通过同一 API 调用本机 git。
 
@@ -39,7 +39,7 @@
 
 新增 provider/model 时，只添加具有官方 URL、核验日期和精确型号的记录；未核实的型号保持 unknown，或在本机 `contextOverrides` 中单独设置。模型最大上下文不保证路由实际 cap，registry 不把最大值当默认。不复制主控百分比，数值超过窗口可显示超过 100%，只限制条形填充。成功安装的压缩清对应行输入读数，保留已知窗口；precompute 和 skip 不清。
 
-Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.effort`，`applied` 为 classic PostToolUse/Stop 的 `effort.level`，`configured` 为主控当前模型的配置后备：先读取环境变量 `CLAUDE_CODE_EFFORT_LEVEL`，合法档位优先于 settings；变量缺失、不合法或读取失败时，依次回退到 `modelSettings[model].effortLevel`（模型键按上下文窗口一节相同的规则匹配）、全局 `effortLevel` 与明确模型后缀。reload 后主控立即读取配置后备，无数据为 `—`；不硬编码 high，不扫描 agent 定义。显式执行的 `/effort <level>` 是会话级配置来源：执行后立即更新主控显示；它不等于上游最终应用值，下一次 `request` 或 `applied` 证据可以接管显示。`request` 与 `applied` 读数仍优先于 `configured`（更可靠），且各自保留来源记录。`configured` 只是配置档位，不能当作上游实际应用的证据，外部 provider 是否已应用不保证。只选取 settings 的这些 effort 字段与上述环境变量，不保存或打印其它 settings 或环境变量。
+Effort 来源保存在状态并可由命令查看：`request` 为 `turn.step.effort`，`applied` 为 classic PostToolUse/Stop 的 `effort.level`，`configured` 为主控当前模型的配置后备：先读取本会话显式 `/effort` 档位（命令行参数或交互选择框；执行后立即更新；写入本会话状态，插件重载后恢复，`session.end` 或真正的新会话清除），再读取环境变量 `CLAUDE_CODE_EFFORT_LEVEL`，合法档位优先于 settings；变量缺失、不合法或读取失败时，依次回退到 `modelSettings[model].effortLevel`（模型键按上下文窗口一节相同的规则匹配）、全局 `effortLevel` 与明确模型后缀。reload 后主控立即恢复本会话 `/effort`，没有时读取配置后备；无数据为 `—`；不硬编码 high，不扫描 agent 定义。显式执行的 `/effort <level>` 是会话级配置来源，它不等于上游最终应用值，下一次 `request` 或 `applied` 证据可以接管显示。`request` 与 `applied` 读数仍优先于 `configured`（更可靠），且各自保留来源记录。`configured` 只是配置档位，不能当作上游实际应用的证据，外部 provider 是否已应用不保证。只选取 settings 的这些 effort 字段与上述环境变量，不保存或打印其它 settings 或环境变量。
 
 工作区为仓库根目录名（非 git 使用会话根目录名），附当前分支；detached HEAD 不显示分支，约每 5 秒刷新。显示使用 theme tokens：主控标签为 `claude`、子代理标签与行次要信息为 `inactive`；模型名为 `text`（普通文本，不着色）；有效 Avg/Last 数字为 `text`，缺值为 `inactive`，速率不以 `success` 表示；effort 按档位着色（数值为 `subtle`）；状态 idle/waiting/streaming 为 `inactive`，aborted 为 `warning`，error 为 `error`，usage unavailable 为 `warning`。工作区行为 `inactive`。颜色跟随 CLI 主题。
 
@@ -71,10 +71,10 @@ fourth-model=1000000
 /plugin install token-speed@claude-workflow-mods
 ```
 
-也可用固定 tag `token-speed-v0.8.2` 获取源文件，并从 checkout 加载：
+也可用固定 tag `token-speed-v0.8.3` 获取源文件，并从 checkout 加载：
 
 ```sh
-git clone --branch token-speed-v0.8.2 https://github.com/liuyejinghong/Claude-workflow.git
+git clone --branch token-speed-v0.8.3 https://github.com/liuyejinghong/Claude-workflow.git
 claude --plugin-dir ./Claude-workflow/mods/token-speed
 ```
 
@@ -86,7 +86,7 @@ claude --plugin-dir ./Claude-workflow/mods/token-speed
 /reload-plugins
 ```
 
-升级到 0.5.0 会清除更早版本的估算测速历史，仅从插件实际观察到的请求开始统计。升级到 0.6.0 可复用 0.5.0 已保存、带完整证据的认证样本；Avg 改为汇总本会话所有代理（包括已结束）同完整请求模型最近 24 小时内的有效测速请求，不补录没有观察证据的旧请求。升级到 0.7.0 不再随包分发本机窗口设置，相关模型改用官方默认；如需自定义窗口，按上一节设置 `contextOverrides`。升级到 0.8.0 后，子代理分母改用 Claude Code 本机实际生效的压缩窗口；已有 `contextOverrides` 仍然优先，不需要迁移。升级到 0.8.1 后，主控分母改用模型窗口与本机压缩窗口的较小值，百分比可能比之前低（例如模型窗口 1M、本机压缩窗口 500k 时按 500k 显示），不需要迁移。升级到 0.8.2 后，`modelSettings` 中不带渠道前缀的键（如 `claude-fable-5-2`）会匹配带渠道前缀的模型，推理档位与压缩窗口可能采用之前未生效的模型级设置；不需要迁移。安装后的插件由 Claude Code 加载；开发时请修改自己的 checkout，不要直接修改 `plugins/cache` 副本。
+升级到 0.5.0 会清除更早版本的估算测速历史，仅从插件实际观察到的请求开始统计。升级到 0.6.0 可复用 0.5.0 已保存、带完整证据的认证样本；Avg 改为汇总本会话所有代理（包括已结束）同完整请求模型最近 24 小时内的有效测速请求，不补录没有观察证据的旧请求。升级到 0.7.0 不再随包分发本机窗口设置，相关模型改用官方默认；如需自定义窗口，按上一节设置 `contextOverrides`。升级到 0.8.0 后，子代理分母改用 Claude Code 本机实际生效的压缩窗口；已有 `contextOverrides` 仍然优先，不需要迁移。升级到 0.8.1 后，主控分母改用模型窗口与本机压缩窗口的较小值，百分比可能比之前低（例如模型窗口 1M、本机压缩窗口 500k 时按 500k 显示），不需要迁移。升级到 0.8.2 后，`modelSettings` 中不带渠道前缀的键（如 `claude-fable-5-2`）会匹配带渠道前缀的模型，推理档位与压缩窗口可能采用之前未生效的模型级设置；不需要迁移。升级到 0.8.3 后，本会话执行的 `/effort` 档位会在 `/reload-plugins` 后恢复，切换模型时与 Claude Code 显示一致；新会话与 `session.end` 仍会清除，不需要迁移。安装后的插件由 Claude Code 加载；开发时请修改自己的 checkout，不要直接修改 `plugins/cache` 副本。
 
 ## 命令
 
@@ -127,7 +127,7 @@ claude --plugin-dir ./Claude-workflow/mods/token-speed
 
 ## 生命周期与边界
 
-统计在本 session 的 version 2 host PluginState，每 loop 单独 row，顺序稳定。reload 保留已认证 Magpie 样本与元数据，旧 active 标为 aborted，旧模块用 host generation lease 拒绝异步写回；以 `$.agent.list()` 重建在跑代理元数据。该 API 不含模型，未观察请求的代理保持 unknown/Last —。每1秒 reconcile、每秒错开上下文用量轮询、每5秒工作区刷新在无流时也运行；渲染只读 host state，绝不等网络。每次渲染/详情只遍历一次会话日志生成完整模型聚合映射，各行复用；不重复维护跨会话或易漂移的全局累计。失败 list 保留行；生命周期 revision guard 防止旧 list 覆盖新 turn，只采纳 running、仅明确 completed/failed/killed 收尾，不按 absence 结束新 spawn。reset 成功清 samples/pending 并使旧异步结果失效；active 时仍拒绝，工具间隙保留活跃代理元数据。
+统计在本 session 的 version 2 host PluginState，每 loop 单独 row，顺序稳定。reload 保留已认证 Magpie 样本与元数据并恢复本会话 `/effort`，旧 active 标为 aborted，旧模块用 host generation lease 拒绝异步写回；以 `$.agent.list()` 重建在跑代理元数据。该 API 不含模型，未观察请求的代理保持 unknown/Last —。每1秒 reconcile、每秒错开上下文用量轮询、每5秒工作区刷新在无流时也运行；渲染只读 host state，绝不等网络。每次渲染/详情只遍历一次会话日志生成完整模型聚合映射，各行复用；不重复维护跨会话或易漂移的全局累计。失败 list 保留行；生命周期 revision guard 防止旧 list 覆盖新 turn，只采纳 running、仅明确 completed/failed/killed 收尾，不按 absence 结束新 spawn。reset 成功清 samples/pending 并使旧异步结果失效；active 时仍拒绝，工具间隙保留活跃代理元数据。
 
 `agent.list()` 只涉及本 session 的子代理/teammate，不扫描其它 CLI 或远程 session。API 不列 workflow agent，也无法观察远程 workflow loop；有本地 turn.step 时可单独统计。无实际观察 step 的行永远不推算速度。重复 session.start 不重复创建 timer；session.end 取消 timer 清空统计，不跨会话持久化。
 

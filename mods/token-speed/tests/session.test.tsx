@@ -852,6 +852,149 @@ test('explicit effort command updates the displayed configuration and preserves 
   expect((await main($)).effortSource).toBe('configured')
 })
 
+test('explicit effort command persists the session level for the next module instance', OPTIONS, async ($, on) => {
+  setup(on, { model: 'main/model', settings: { modelSettings: { 'main/model': { effortLevel: 'medium' } } } })
+  on('command.run', { command: 'effort' }, async () => ({ text: 'Effort level set to low' }))
+  await $.session.start(START)
+  expect((await main($)).effort).toBe('medium')
+  expect((await main($)).effortSource).toBe('configured')
+  await $.command.run({ command: 'effort', args: 'low', origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 120 } })
+  expect((await state($)).session.commandEffort).toBe('low')
+  expect((await main($)).effort).toBe('low')
+  expect((await main($)).effortSource).toBe('configured')
+})
+
+test('an effort picker selection parsed from command text updates and persists the session level', OPTIONS, async ($, on) => {
+  setup(on, { model: 'main/model', settings: { modelSettings: { 'main/model': { effortLevel: 'medium' } } } })
+  const text = 'Set effort level to low (saved as your default for new sessions): Quick, straightforward implementation with minimal overhead'
+  on('command.run', { command: 'effort' }, async () => ({ text }))
+  await $.session.start(START)
+  expect((await main($)).effort).toBe('medium')
+  const picker = await $.command.run({ command: 'effort', args: '', origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 120 } })
+  expect(picker.text).toBe(text)
+  expect((await state($)).session.commandEffort).toBe('low')
+  expect((await main($)).effort).toBe('low')
+  expect((await main($)).effortSource).toBe('configured')
+})
+
+test('an effort picker result without a level leaves the session effort unchanged', OPTIONS, async ($, on) => {
+  setup(on, { model: 'main/model', settings: { modelSettings: { 'main/model': { effortLevel: 'medium' } } } })
+  let text: string | undefined
+  on('command.run', { command: 'effort' }, async () => text === undefined ? {} : { text })
+  await $.session.start(START)
+  const missing = await $.command.run({ command: 'effort', args: '', origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 120 } })
+  expect(missing.text).toBeUndefined()
+  expect((await main($)).effort).toBe('medium')
+  expect((await state($)).session.commandEffort).toBeUndefined()
+  text = 'effort picker'
+  await $.command.run({ command: 'effort', args: '', origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 120 } })
+  expect((await main($)).effort).toBe('medium')
+  await $.command.run({ command: 'effort', args: 'low', origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 120 } })
+  expect((await main($)).effort).toBe('low')
+  expect((await state($)).session.commandEffort).toBe('low')
+  text = 'effort picker'
+  await $.command.run({ command: 'effort', args: '', origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 120 } })
+  expect((await main($)).effort).toBe('low')
+  expect((await state($)).session.commandEffort).toBe('low')
+})
+
+test('an explicit effort argument wins over the effort picker text', OPTIONS, async ($, on) => {
+  setup(on, { model: 'main/model', settings: { modelSettings: { 'main/model': { effortLevel: 'medium' } } } })
+  on('command.run', { command: 'effort' }, async () => ({ text: 'Set effort level to max (saved as your default for new sessions)' }))
+  await $.session.start(START)
+  await $.command.run({ command: 'effort', args: 'low', origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 120 } })
+  expect((await main($)).effort).toBe('low')
+  expect((await state($)).session.commandEffort).toBe('low')
+  expect((await main($)).effortSource).toBe('configured')
+})
+
+// The kit has no module hot-replacement API: seed the host snapshot of an old
+// module beside the model switch to exercise what the next module instance sees.
+test('a reloaded module restores the session /effort before a main model switch', OPTIONS, async ($, on) => {
+  let model = 'old/model'
+  const clock = setup(on, { settings: { modelSettings: { 'new/model': { effortLevel: 'medium' } } } })
+  on('session.model', async () => ({ value: model }))
+  let seeded = false
+  on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => {
+    if (seeded) return next(e)
+    seeded = true
+    return next({ ...e, value: { ...e.value, session: { ...e.value.session, commandEffort: 'low' } } })
+  })
+  await $.session.start(START)
+  expect(seeded).toBe(true)
+  expect((await state($)).session.commandEffort).toBe('low')
+  expect((await main($)).effort).toBe('low')
+  expect((await main($)).effortSource).toBe('configured')
+  model = 'new/model'
+  await clock.advance(1000)
+  expect((await main($)).currentModel).toBe('new/model')
+  expect((await main($)).effort).toBe('low')
+  expect((await main($)).effortSource).toBe('configured')
+})
+
+test('a new session after session.end does not reuse the previous /effort', OPTIONS, async ($, on) => {
+  setup(on, { model: 'main/model', settings: { modelSettings: { 'main/model': { effortLevel: 'medium' } } } })
+  on('command.run', { command: 'effort' }, async () => ({ text: 'Effort level set to low' }))
+  await $.session.start(START)
+  await $.command.run({ command: 'effort', args: 'low', origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 120 } })
+  expect((await main($)).effort).toBe('low')
+  await $.session.end({ reason: 'clear', sessionId: 'session', resume: { id: 'session' } })
+  expect((await state($)).session.commandEffort).toBeUndefined()
+  await $.session.start(START)
+  expect((await main($)).effort).toBe('medium')
+  expect((await main($)).effortSource).toBe('configured')
+})
+
+test('an invalid persisted /effort is dropped and model settings answer', OPTIONS, async ($, on) => {
+  setup(on, { model: 'main/model', settings: { modelSettings: { 'main/model': { effortLevel: 'medium' } } } })
+  let seeded = false
+  on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => {
+    if (seeded) return next(e)
+    seeded = true
+    // An old or foreign module may have left any JSON here; normalize must drop it.
+    return next({ ...e, value: { ...e.value, session: { ...e.value.session, commandEffort: 'ultra' } } as unknown as typeof e.value })
+  })
+  await $.session.start(START)
+  expect(seeded).toBe(true)
+  expect((await state($)).session.commandEffort).toBeUndefined()
+  expect((await main($)).effort).toBe('medium')
+  expect((await main($)).effortSource).toBe('configured')
+})
+
+test('a restored /effort still yields to the next request effort', OPTIONS, async ($, on) => {
+  const clock = setup(on, { model: 'codex/gpt-6.1-sol:high', settings: EFFORT_SETTINGS,
+    usage: { startedAt: 0, context: { window: 272000 }, rateLimits: [] } })
+  on('turn.step', async function* (_$, e) { await clock.sleep(2000); return result(e) })
+  let seeded = false
+  on('state.set', { plugin: 'token-speed', key: 'snapshot' }, async (_$, e, next) => {
+    if (seeded) return next(e)
+    seeded = true
+    return next({ ...e, value: { ...e.value, session: { ...e.value.session, commandEffort: 'low' } } })
+  })
+  await $.session.start(START)
+  expect((await main($)).effort).toBe('low')
+  expect((await main($)).effortSource).toBe('configured')
+  const pending = consume($.turn.step(request(undefined, 'high')))
+  await clock.settle()
+  expect((await main($)).effort).toBe('high')
+  expect((await main($)).effortSource).toBe('request')
+  await clock.advance(1000)
+  expect((await main($)).effort).toBe('high')
+  expect((await main($)).effortSource).toBe('request')
+  await clock.advance(1000)
+  await pending
+  expect((await main($)).effort).toBe('high')
+  expect((await main($)).effortSource).toBe('request')
+})
+
 test('request and applied effort outrank the environment across refreshes and leave the real request untouched', OPTIONS, async ($, on) => {
   const clock = setup(on, { model: 'codex/gpt-6.1-sol:high', settings: EFFORT_SETTINGS,
     env: { CLAUDE_CODE_EFFORT_LEVEL: 'max' }, usage: { startedAt: 0, context: { window: 272000 }, rateLimits: [] } })

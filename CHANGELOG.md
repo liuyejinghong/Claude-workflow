@@ -8,6 +8,10 @@
 - README 与[首页结构约定](docs/readme-structure.md)重写：恢复按岗位的模型类型建议，并写明只是建议、不要求使用列表中的模型；安装与案例部分按读者顺序重排。
 - 调研归档新增三份 2026-11-08 快照：[编码订阅套餐对比](docs/research/coding-subscriptions-2026-11-08.md)、[编排省 token 方法](docs/research/token-saving-orchestration-2026-11-08.md)、[Opus 5.5 与 Sonnet 5.5 主控对比](docs/research/opus-vs-sonnet-controller-2026-11-08.md)。
 
+## Mod 发布：token-speed 0.8.3 - 2026-11-11
+
+- 修复 `/reload-plugins` 后本会话 `/effort` 档位丢失：档位（含 `/effort` 选择框设置的档位）写入本会话状态，重载后恢复，切换模型时主控显示与 Claude Code 一致；新会话与 `session.end` 会清除。详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.8.3` 说明），不改变编排仓库版本。
+
 ## Mod 发布：token-speed 0.8.2 - 2026-11-11
 
 - 修复 `modelSettings` 键匹配：主控与子代理的推理档位、压缩窗口现在能匹配不带渠道前缀的规范模型键（如 `claude-fable-5-2` 匹配 `factory/claude-fable-5-2:medium`）；带 `/` 的键仍不跨渠道匹配。详见 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)（含 tag `token-speed-v0.8.2` 说明），不改变编排仓库版本。
