@@ -93,7 +93,7 @@ test('top-level settings supply a child window with its own source and recompute
   expect((await loop($, 'child-a')).context).toEqual({ tokens: 150000, window: 300000, percent: 50,
     source: 'cli-input-auto-compact-window' })
   expect((await command($)).text).toMatch('cli-input-auto-compact-window')
-  expect((await command($)).text).toMatch('token-speed 0.8.2')
+  expect((await command($)).text).toMatch('token-speed 0.8.3')
 })
 
 test('a child window matches a bare modelSettings key for a provider-prefixed model', OPTIONS, async ($, on) => {

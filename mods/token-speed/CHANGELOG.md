@@ -1,5 +1,13 @@
 # token-speed Changelog
 
+## 0.8.3
+
+对应 tag `token-speed-v0.8.3`。
+
+- 修复插件重载后丢失本会话 `/effort` 档位：`/effort <level>` 现在同时写入本会话状态，`/reload-plugins` 后恢复；切换模型时主控行继续显示该档位（来源 `configured`），与 Claude Code 的会话级设置一致，不再回退到 `modelSettings[新模型].effortLevel` 或顶层设置。支持通过 `/effort` 选择框设置的档位：无参数执行时从命令返回文字解析档位并同样持久化。
+- 真正的新会话开始与 `session.end` 会清除保存的档位。快照中的非法值被丢弃；没有保存值时按现有顺序回退到 `CLAUDE_CODE_EFFORT_LEVEL`、模型/全局 settings 和模型后缀。
+- 请求的 `effort` 或 applied 证据到来后仍优先显示实际档位。不需要迁移。
+
 ## 0.8.2
 
 对应 tag `token-speed-v0.8.2`。

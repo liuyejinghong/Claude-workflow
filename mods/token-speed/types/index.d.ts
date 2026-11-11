@@ -1,6 +1,8 @@
 export type TokenSpeedStatus = 'idle' | 'waiting' | 'streaming' | 'aborted' | 'error' | 'usage unavailable'
 
-export type TokenSpeedEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | number
+export type TokenSpeedEffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+export type TokenSpeedEffort = TokenSpeedEffortLevel | number
 
 export type TokenSpeedMeasurementStatus = 'waiting' | 'streaming' | 'pending' | 'measured'
   | 'failed' | 'unmeasurable' | 'ambiguous' | 'unavailable'
@@ -85,6 +87,8 @@ export type TokenSpeedSessionInfo = {
   evidenceRetiredThrough?: number
   /** Last observed host configuration; distinct from the latest actual request. */
   configuredModel?: string
+  /** Explicit `/effort` level for this session; restored after a plugin reload and cleared when the session ends. */
+  commandEffort?: TokenSpeedEffortLevel
   context: TokenSpeedContextInfo
   workspace: TokenSpeedWorkspace | null
 }
