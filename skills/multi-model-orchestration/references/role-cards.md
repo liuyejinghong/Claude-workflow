@@ -76,7 +76,7 @@ python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role R
 
 - 派发时把所选岗位的 body（职责与交付合同）并入本次 prompt，与任务目标、路径、约束和验收标准合成一份自包含 prompt；不能只报一个 agent 名就派发。
 - 岗位带 `tools`（editor 为 Read/Glob/Grep/Edit/Write）时，在合同里显式写出工具范围。
-- 卡里的 tools 是合同说明，不是权限控制：JSON 不修改原生 agent 的权限或定义，agent 定义原样使用。
+- 卡里的 tools 是合同说明，不是权限控制：JSON 不修改原生 agent 的权限或定义，agent 定义原样使用。禁止被派者再委托靠 agent 定义 frontmatter 的 `disallowedTools: Agent, Workflow, SendMessage, EnterWorktree` 落实（见 SKILL「调用协议」）。
 
 ## 写卡（plan 的 orchestration 段）
 
