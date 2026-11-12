@@ -70,6 +70,9 @@ class SetupContractTests(unittest.TestCase):
         rendered = SETUP.render_agent(assets["worker"], {"model": model}).decode()
         values = SETUP.frontmatter_scalars(rendered.encode())
         self.assertEqual(values["model"], model)
+        self.assertIn('\ndisallowedTools: "Agent, Workflow, SendMessage, EnterWorktree"\n', rendered)
+        for role, asset in assets.items():
+            self.assertIn("Do not delegate", asset["body"])
         self.assertNotIn("effort", values)
         self.assertNotIn(":max", rendered)
 

@@ -324,6 +324,9 @@ def load_rule():
     return data
 
 
+NO_DELEGATION_TOOLS = ("Agent", "Workflow", "SendMessage", "EnterWorktree")
+
+
 def render_agent(asset, binding):
     lines = ["---", "name: " + json.dumps(asset["name"], ensure_ascii=False),
              "description: " + json.dumps(asset["description"], ensure_ascii=False),
@@ -332,6 +335,8 @@ def render_agent(asset, binding):
         lines.append("effort: " + binding["effort"])
     if "tools" in asset:
         lines.append("tools: " + json.dumps(", ".join(asset["tools"])))
+    # Delegated roles never re-delegate; enforce at the tool layer, not only in prose.
+    lines.append("disallowedTools: " + json.dumps(", ".join(NO_DELEGATION_TOOLS)))
     body = asset["body"].rstrip() + "\n"
     if binding.get("notes"):
         body += "\nUser-confirmed assignment note: " + binding["notes"] + "\n"
