@@ -18,8 +18,9 @@ import urllib.request
 
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
-ROLE_NAMES = ("worker", "engineer", "reviewer", "researcher", "editor")
+ROLE_NAMES = ("worker", "engineer", "reviewer", "researcher", "editor", "architect")
 EDITOR_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write"]
+ARCHITECT_TOOLS = ["Read", "Glob", "Grep", "Bash"]
 # Deliberately finite: a claude-* spelling alone does not establish a supported key.
 CANONICAL_MODELS = frozenset({
     "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1",
@@ -174,7 +175,7 @@ def valid_window(value):
 def check_role_names(roles, label):
     if isinstance(roles, dict) and "visual" in roles:
         raise SetupError("The visual role has been removed; assign visual evidence to a suitable native "
-                         "agent with confirmed vision under one of the five roles, without a separate visual role.")
+                         "agent with confirmed vision under one of the six roles, without a separate visual role.")
     if not isinstance(roles, dict) or set(roles) - set(ROLE_NAMES):
         raise SetupError(f"{label} must be an object containing only: " + ", ".join(ROLE_NAMES) + ".")
 
@@ -252,7 +253,7 @@ def validate_plan(plan):
 
 def validate_assets(assets):
     if not isinstance(assets, dict) or set(assets) != set(ROLE_NAMES):
-        raise SetupError("Role assets must contain exactly the five documented neutral roles: "
+        raise SetupError("Role assets must contain exactly the six documented neutral roles: "
                          + ", ".join(ROLE_NAMES) + ".")
     for role, asset in assets.items():
         check_keys(asset, ("name", "description", "body", "tools"), f"Asset {role}")
@@ -271,6 +272,8 @@ def validate_assets(assets):
                 raise SetupError(f"Asset {role} has an invalid tools list.")
         if role == "editor" and asset.get("tools") != EDITOR_TOOLS:
             raise SetupError("The editor asset must restrict tools to Read/Glob/Grep/Edit/Write.")
+        if role == "architect" and asset.get("tools") != ARCHITECT_TOOLS:
+            raise SetupError("The architect asset must restrict tools to Read/Glob/Grep/Bash.")
     return assets
 
 
@@ -872,7 +875,7 @@ def build_parser():
     reading = commands.add_parser("cards", help="Read current role cards and native agent candidates; no settings scan or network.")
     reading.add_argument("--config-dir", type=absolute_path, default=default_config_dir(),
                          help="CLAUDE_HOME, then CLAUDE_CONFIG_DIR, then HOME/.claude by default.")
-    reading.add_argument("--role", choices=ROLE_NAMES, help="Return only this role; otherwise return all five roles.")
+    reading.add_argument("--role", choices=ROLE_NAMES, help="Return only this role; otherwise return all six roles.")
     scanning = commands.add_parser("scan", help="Read local model candidates; no network by default.")
     scanning.add_argument("--config-dir", type=absolute_path, default=default_config_dir(),
                           help="CLAUDE_HOME, then CLAUDE_CONFIG_DIR, then HOME/.claude by default.")

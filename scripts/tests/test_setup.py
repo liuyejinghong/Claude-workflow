@@ -59,13 +59,15 @@ class SetupContractTests(unittest.TestCase):
         assets = SETUP.load_assets()
         self.assertEqual(set(assets), set(SETUP.ROLE_NAMES))
         self.assertEqual(assets["editor"]["tools"], SETUP.EDITOR_TOOLS)
+        self.assertEqual(assets["architect"]["tools"], SETUP.ARCHITECT_TOOLS)
         for role, asset in assets.items():
             self.assertEqual(asset["name"], "workflow-" + role)
             self.assertIn("First use Read", asset["body"])
-            self.assertIn("actual", asset["body"])
+            self.assertIn("actual" if role != "architect" else "evidence", asset["body"])
             self.assertIn("scope" if role != "researcher" else "scoped", asset["body"])
         self.assertIn("without edits", assets["reviewer"]["body"])
         self.assertIn("same context", assets["reviewer"]["body"])
+        self.assertIn("read-only", assets["architect"]["body"])
         model = 'vendor/model:existing[1m]"quoted'
         rendered = SETUP.render_agent(assets["worker"], {"model": model}).decode()
         values = SETUP.frontmatter_scalars(rendered.encode())
@@ -80,7 +82,7 @@ class SetupContractTests(unittest.TestCase):
         assets = SETUP.load_assets()
         for role, asset in assets.items():
             expected = {"name", "description", "body"}
-            if role == "editor":
+            if role in ("editor", "architect"):
                 expected.add("tools")
             self.assertEqual(set(asset), expected)
 
@@ -102,6 +104,8 @@ class SetupContractTests(unittest.TestCase):
             mutate(lambda a: a["worker"].update(tools=["invalid tool"])),
             mutate(lambda a: a["editor"].pop("tools")),
             mutate(lambda a: a["editor"].update(tools=["Read", "Bash"])),
+            mutate(lambda a: a["architect"].pop("tools")),
+            mutate(lambda a: a["architect"].update(tools=["Read", "Glob", "Grep", "Edit", "Write"])),
             mutate(lambda a: a.pop("worker")),
             mutate(lambda a: a.update(extra={})),
         ]
@@ -230,7 +234,7 @@ class SetupContractTests(unittest.TestCase):
         self.assertIsNone(by_role["worker"]["notes"])
         self.assertEqual(by_role["editor"]["model"], "claude-haiku-5-5")
         self.assertEqual(by_role["editor"]["notes"], "user-confirmed note")
-        for role in ("engineer", "reviewer", "researcher"):
+        for role in ("engineer", "reviewer", "researcher", "architect"):
             row = by_role[role]
             self.assertEqual(row["status"], "skipped")
             self.assertIsNone(row["model"])
@@ -722,7 +726,7 @@ class SetupContractTests(unittest.TestCase):
         self.put_json(self.config / "orchestration.json", configuration)
         result = SETUP.cards(self.config)
         self.assertEqual([card["role"] for card in result["roles"]],
-                         ["worker", "engineer", "reviewer", "researcher", "editor"])
+                         ["worker", "engineer", "reviewer", "researcher", "editor", "architect"])
         worker = result["roles"][0]
         self.assertTrue(worker["configured"])
         self.assertEqual(worker["candidates"], [candidates[1], candidates[3], candidates[5], candidates[0]])
@@ -799,7 +803,7 @@ class SetupContractTests(unittest.TestCase):
         self.assertEqual(output["command"], "cards")
         self.assertEqual(output["config_path"], str(self.config / "orchestration.json"))
         self.assertFalse(output["configured"])
-        self.assertEqual(len(output["roles"]), 5)
+        self.assertEqual(len(output["roles"]), 6)
         for card in output["roles"]:
             self.assertFalse(card["configured"])
             self.assertEqual(card["candidates"], [])
@@ -886,6 +890,34 @@ class SetupContractTests(unittest.TestCase):
         path.unlink()
         self.assertFalse(SETUP.cards(self.config)["configured"])
         self.assertEqual(SETUP.cards(self.config, "worker")["roles"][0]["candidates"], [])
+
+    def test_architect_asset_cards_and_rendered_definition(self):
+        assets = SETUP.load_assets()
+        self.assertEqual(SETUP.ROLE_NAMES[-1], "architect")
+        self.assertEqual(assets["architect"]["name"], "workflow-architect")
+        self.assertEqual(assets["architect"]["tools"], SETUP.ARCHITECT_TOOLS)
+        configuration = {"version": 1, "roles": {"architect": {"candidates": [
+            {"agent": "disabled-architect", "priority": 0},
+            {"agent": "plugin:architect", "priority": 1},
+        ]}}}
+        self.put_json(self.config / "orchestration.json", configuration)
+        result = SETUP.cards(self.config, "architect")
+        self.assertEqual(len(result["roles"]), 1)
+        card = result["roles"][0]
+        self.assertEqual(card["role"], "architect")
+        self.assertTrue(card["configured"])
+        self.assertEqual(card["tools"], SETUP.ARCHITECT_TOOLS)
+        self.assertEqual(card["candidates"], [{"agent": "plugin:architect", "priority": 1}])
+        self.assertEqual(card["disabled_candidates"], [{"agent": "disabled-architect", "priority": 0}])
+        output = self.command("cards", "--role", "architect")
+        self.assertEqual(output.returncode, 0, output.stderr)
+        self.assertEqual([item["role"] for item in json.loads(output.stdout)["roles"]], ["architect"])
+        SETUP.apply_plan({"roles": {"architect": {"model": "inherit"}}}, self.config)
+        rendered = (self.config / "agents" / "workflow-architect.md").read_text()
+        self.assertIn('tools: "Read, Glob, Grep, Bash"', rendered)
+        self.assertIn('disallowedTools: "Agent, Workflow, SendMessage, EnterWorktree"', rendered)
+        self.assertEqual([agent["name"] for agent in SETUP.verify(self.config)["agents"]],
+                         ["workflow-architect"])
 
     def test_cards_cli_malformed_duplicate_keys_and_unknown_fields_fail_closed(self):
         path = self.config / "orchestration.json"
@@ -1082,7 +1114,7 @@ class SetupContractTests(unittest.TestCase):
                          before["config/agents/workflow-visual.md"])
         self.assertEqual(SETUP.verify(self.config)["agents"], [])
 
-    def test_verify_reports_five_cards_and_rejects_bad_configuration(self):
+    def test_verify_reports_six_cards_and_rejects_bad_configuration(self):
         configuration = self.orchestration({"agent": "plugin:not-loaded", "priority": 1})
         path = self.put_json(self.config / "orchestration.json", configuration)
         result = self.command("verify")
@@ -1090,7 +1122,7 @@ class SetupContractTests(unittest.TestCase):
         output = json.loads(result.stdout)
         self.assertTrue(output["configured"])
         self.assertEqual(output["config_path"], str(path))
-        self.assertEqual(len(output["role_cards"]), 5)
+        self.assertEqual(len(output["role_cards"]), 6)
         self.assertEqual(output["agents"], [])
         self.assertIn("references/role-cards.md", output["required_resources"])
         self.assertIn("not proof that an agent is loaded", " ".join(output["notes"]))
@@ -1103,7 +1135,7 @@ class SetupContractTests(unittest.TestCase):
         path.unlink()
         output = SETUP.verify(self.config)
         self.assertFalse(output["configured"])
-        self.assertEqual(len(output["role_cards"]), 5)
+        self.assertEqual(len(output["role_cards"]), 6)
 
     def test_verify_requires_role_card_reference_in_installed_copy(self):
         installed = self.root / "installed-skill-cards"

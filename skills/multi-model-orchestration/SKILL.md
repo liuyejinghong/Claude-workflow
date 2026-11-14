@@ -13,11 +13,11 @@ description: 多模型委托与安装配置：检查可用代理、写任务合�
 - 按角色描述、能力与风险约束选型，以当前会话工具目录中实际可用的 agent 定义为准：风险与合同先于速度，其次模态、任务形态、上下文与延迟；用户指定模型优先。不按固定模型名或档位预设分工，不按 effort 拆分重复代理；用户环境已有的 agent 按其实际定义与 config，不自动等同任何固定档位。
 - 派发失败或产出不达验收时，由主控先诊断，再决定补合同或升级模型，不按固定模型链逐级尝试。
 
-默认安装只提供本 skill 与五岗纯职责定义，不创建模型代理、不写角色卡、不预置候选或 priority；已有角色卡、代理和设置会保留，按现有有效规则使用。旧的 `./install.sh --preset` 个人模型安装入口已停用，执行会明确报错且不写入任何文件。需要新绑定或调整顺序时，用户按实际可用 agent/模型显式配置。
+默认安装只提供本 skill 与六岗纯职责定义，不创建模型代理、不写角色卡、不预置候选或 priority；已有角色卡、代理和设置会保留，按现有有效规则使用。旧的 `./install.sh --preset` 个人模型安装入口已停用，执行会明确报错且不写入任何文件。需要新绑定或调整顺序时，用户按实际可用 agent/模型显式配置。
 
 ## 角色卡（候选与优先级）
 
-配置在 `<config>/orchestration.json`（`CLAUDE_HOME` > `CLAUDE_CONFIG_DIR` > `~/.claude`），五个岗位 worker / engineer / reviewer / researcher / editor；每个岗位列用户确认的原生 agent 候选与 priority（1 最高、10 最低，0 该岗位停用，同值按卡内顺序）。角色卡是可选配置，只在用户明确要求时写入；默认安装不创建角色卡。卡只定候选与顺序，不复制 model/effort/description，不改原生 agent 权限或定义。
+配置在 `<config>/orchestration.json`（`CLAUDE_HOME` > `CLAUDE_CONFIG_DIR` > `~/.claude`），六个岗位 worker / engineer / reviewer / researcher / editor / architect；每个岗位列用户确认的原生 agent 候选与 priority（1 最高、10 最低，0 该岗位停用，同值按卡内顺序）。角色卡是可选配置，只在用户明确要求时写入；默认安装不创建角色卡。卡只定候选与顺序，不复制 model/effort/description，不改原生 agent 权限或定义。
 
 ```text
 python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role ROLE]
@@ -25,10 +25,10 @@ python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role R
 
 - 主控每次派发岗位内的 Agent 或 Workflow 任务执行 stage 前，必须运行 `cards`（可用 `--role` 只读所选岗位）。卡已配置时按当前表选候选；每次调用都重新读表，改 priority 不需 reload。
 - 专项内置代理（如 `claude-code-guide`、`Explore`、`Plan`、`statusline-setup`）按自身 description 和用户范围选择；不得以专项名义绕过适用于该任务的角色卡或调用 priority 0 的自定义候选。
-- 未配置（整个文件缺失）：明确报告角色卡未配置；五岗没有候选表，不能声称已配置角色卡分流或自动按卡选择候选。已有角色代理仍可按当前会话实际可用 agent 的 description 与用户指定选型，但不称为角色卡分流。配置损坏：直接报告如何修复，不静默回退。
+- 未配置（整个文件缺失）：明确报告角色卡未配置；六岗没有候选表，不能声称已配置角色卡分流或自动按卡选择候选。已有角色代理仍可按当前会话实际可用 agent 的 description 与用户指定选型，但不称为角色卡分流。配置损坏：直接报告如何修复，不静默回退。
 - 配置文件存在但某岗位被省略、`candidates` 为空或全为 priority 0：该岗位没有可派发候选，报告缺口，不回退任何默认名单，也不绕过 priority 0 去默认派发。
 - 选型：结合岗位定义与工具目录里 agent 的 description 判断适用性、模态与限定条件，在适用、已启用（priority ≥ 1）且已加载的候选里按 priority 选。本次用户指定模型优先，但不得绕过 priority 0；要用停用项必须先改卡。
-- 派发时把所选岗位的 body（职责与交付合同）并入本次 prompt；岗位带 tools（如 editor 的 Read/Glob/Grep/Edit/Write）时在合同里显式写出工具范围。卡里的 tools 是合同说明，不是权限控制。
+- 派发时把所选岗位的 body（职责与交付合同）并入本次 prompt；岗位带 tools（如 editor 的 Read/Glob/Grep/Edit/Write，或 architect 的 Read/Glob/Grep/Bash）时在合同里显式写出工具范围。卡里的 tools 是合同说明，不是权限控制。
 - 卡维护的偏好排序优先于 description 或全局规则里「相对默认/备用」的措辞；职责范围、「仅用户指定才用」这类硬边界仍然有效。
 - 找不到能力匹配的候选就报告缺口并继续无依赖工作；执行中断或产出不达验收按「审查与返工」处理，不自动重跑。
 
@@ -47,11 +47,11 @@ python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role R
 
 用户明确调用该分支，或用户明确要求按当前环境已能调用的 agent/模型配置角色时，按 [references/installation.md](references/installation.md) 执行：
 
-先做适用性检查（已确认 Claude 订阅且所需 Claude 模型全部可用时，推荐 Claude Code 原生子代理并结束角色配置；状态未知只查可验证信息或询问，不读凭据、不靠模型名断言）→ 探索当前会话已能调用的 agent、已配置模型与用户偏好（只读发现，不代表可用或已被选中；无列表可用已有候选或用户明确选择的 `inherit`，不虚构）→ 与用户确认 worker / engineer / reviewer / researcher / editor 的职责、候选、精确 `model` 或 `inherit` 及优先顺序 → 上下文检查（必经，写入可选）→ plan 与 preview → 随 preview 呈现配置确认表（含真实文件动作与用户确认的绑定），用户一次确认授权后 apply → 重载与本地最小验证。绑定只写用户确认的 `model`；`inherit` 仅在用户明确选择时写入。不把维护者模型、示例或预设顺序当默认或依据；provider、订阅与凭据保持用户控制。
+先做适用性检查（已确认 Claude 订阅且所需 Claude 模型全部可用时，推荐 Claude Code 原生子代理并结束角色配置；状态未知只查可验证信息或询问，不读凭据、不靠模型名断言）→ 探索当前会话已能调用的 agent、已配置模型与用户偏好（只读发现，不代表可用或已被选中；无列表可用已有候选或用户明确选择的 `inherit`，不虚构）→ 与用户确认 worker / engineer / reviewer / researcher / editor / architect 的职责、候选、精确 `model` 或 `inherit` 及优先顺序 → 上下文检查（必经，写入可选）→ plan 与 preview → 随 preview 呈现配置确认表（含真实文件动作与用户确认的绑定），用户一次确认授权后 apply → 重载与本地最小验证。绑定只写用户确认的 `model`；`inherit` 仅在用户明确选择时写入。不把维护者模型、示例或预设顺序当默认或依据；provider、订阅与凭据保持用户控制。
 
 - 这是 skill 分支，不是 Workflow 编排；普通任务不进入。
 - 用户明确要求配置时，已有可复用的原生 agent 优先走角色卡轻量路径（见‘角色卡’），不重跑安装扫描，也不为角色卡重配 provider、订阅或上下文参数；只有缺 agent 或要显式配置单模型入口才走本页。
-- 默认安装只装 skill 与五岗职责定义，不新增角色配置，也不改已有配置；安装文件与配置角色是两件事。
+- 默认安装只装 skill 与六岗职责定义，不新增角色配置，也不改已有配置；安装文件与配置角色是两件事。
 - 未看过具体 preview 不写入；verify 只做本地检查，不夸大为性能或压力结论。
 
 排查入口：缺代理与安装方式读 [references/agents-and-installation.md](references/agents-and-installation.md)；需要安装/配置角色读 [references/installation.md](references/installation.md)；岗位候选与优先级读 [references/role-cards.md](references/role-cards.md)；第三方窗口/压缩问题读 [references/third-party-context.md](references/third-party-context.md)。
@@ -63,7 +63,7 @@ python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role R
 - 派发前只询问会实质改变目标或授权的真歧义；可调查的事实先查清，常规实施选择自行决定。
 - 第一步指定 Read 一个文件确认工具可用；缺工具立即报告退出，不用 web 工具绕路。重派一次仍失败，按可用代理规则处理。
 - 并行与写入分工遵守「并发写入与交接」。
-- 被派者不再委托：五个岗位的被派者不调用 Agent / Workflow、不启动子代理，不用 SendMessage 给其他代理派活，也不切换或新建工作树。agent 定义用 frontmatter `disallowedTools: Agent, Workflow, SendMessage, EnterWorktree` 从工具层禁止，Prompt 再写明。需要并行时，被派者在回报里写拆分建议，由主控派发。不设受控再委托。
+- 被派者不再委托：六个岗位的被派者不调用 Agent / Workflow、不启动子代理，不用 SendMessage 给其他代理派活，也不切换或新建工作树。agent 定义用 frontmatter `disallowedTools: Agent, Workflow, SendMessage, EnterWorktree` 从工具层禁止，Prompt 再写明。需要并行时，被派者在回报里写拆分建议，由主控派发。不设受控再委托。
 - 审查 prompt 写明“直接审，不要调用 `/code-review` 等 skill”；需用审查 skill 时由主会话调用。
 
 ## 并发写入与交接
