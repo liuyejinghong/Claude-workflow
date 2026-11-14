@@ -17,13 +17,13 @@ skill `multi-model-orchestration` 的按需参考：派发时找不到所需代�
 
 | 方式 | 内容 | 之后要做 |
 |---|---|---|
-| 默认（只装 skill） | `./install.sh` 只复制完整便携 skill 目录（含 `references/`、`assets/`、`scripts/`）与五岗纯职责定义到 `~/.claude/skills/`，不创建模型代理、不写 `orchestration.json`、不预置候选或 priority、不改 settings、不写 `CLAUDE.md`。 | 全新配置且尚无用户绑定时，五岗处于未配置状态。已有角色卡、代理和设置会保留。需要时由用户明确运行 `/multi-model-orchestration install`，向导先探索当前会话已能调用的 agent/模型与用户偏好，再按确认的 `model` 或 `inherit` 绑定（见 [installation.md](installation.md)）；不要求特定网关。 |
+| 默认（只装 skill） | `./install.sh` 只复制完整便携 skill 目录（含 `references/`、`assets/`、`scripts/`）与六岗纯职责定义到 `~/.claude/skills/`，不创建模型代理、不写 `orchestration.json`、不预置候选或 priority、不改 settings、不写 `CLAUDE.md`。 | 全新配置且尚无用户绑定时，六岗处于未配置状态。已有角色卡、代理和设置会保留。需要时由用户明确运行 `/multi-model-orchestration install`，向导先探索当前会话已能调用的 agent/模型与用户偏好，再按确认的 `model` 或 `inherit` 绑定（见 [installation.md](installation.md)）；不要求特定网关。 |
 | 手工仅 skill | 把 `skills/multi-model-orchestration/` 整个目录复制到 skills 目录，与默认安装等效。 | 同上；skill 本地资源随目录走。 |
 | 角色卡（轻量） | 不装任何 agent，只在用户明确要求时写一份 `<config>/orchestration.json`，引用你已有的原生 agent 与 priority。 | 每次读表用 `setup.py cards`；改 priority 即时生效，不需要重载；见 [role-cards.md](role-cards.md)。 |
 | 历史命令（已停用） | `./install.sh --preset` 不再安装个人示例模型；执行会明确报错并退出，不写入任何文件。 | 按当前环境实际可用的 agent/模型与偏好，通过安装向导或角色卡显式配置；provider/凭据自行负责。 |
 | 自备 agent | 只把你自己的模型定义放到 agents 目录；这不是默认安装的一部分。 | 缺的模型按‘四种可用性分支’处理；也可在 install 分支按用户确认绑定现有 agent，不做任意能力替换。 |
 
-默认安装完成后，skill 与五岗纯职责定义可用。全新配置且尚无用户绑定时，没有角色代理或候选表；已有角色卡、代理和设置会保留，按现有有效规则使用。没有角色卡时，按当前会话实际可用的 agent 与用户指定选型；用户明确要求并确认后，才通过安装向导写新绑定或角色卡。
+默认安装完成后，skill 与六岗纯职责定义可用。全新配置且尚无用户绑定时，没有角色代理或候选表；已有角色卡、代理和设置会保留，按现有有效规则使用。没有角色卡时，按当前会话实际可用的 agent 与用户指定选型；用户明确要求并确认后，才通过安装向导写新绑定或角色卡。
 
 安装步骤（默认）：
 
@@ -37,6 +37,6 @@ cd Claude-workflow
 
 ## 验证与修改边界
 
-- `scripts/verify.sh` 默认只做本地检查（已安装的 skill 文件、五岗职责定义与用户明确选择的角色定义（如有），不联网、不发生成请求）；`--models` 可选扫描已配置模型/列表；`--smoke` 必须显式设置 `SMOKE_MODEL`（无默认模型）做一次工具往返。列表里包含某模型不等于 CLI 兼容、工具往返可用或压力测试通过。
+- `scripts/verify.sh` 默认只做本地检查（已安装的 skill 文件、六岗职责定义与用户明确选择的角色定义（如有），不联网、不发生成请求）；`--models` 可选扫描已配置模型/列表；`--smoke` 必须显式设置 `SMOKE_MODEL`（无默认模型）做一次工具往返。列表里包含某模型不等于 CLI 兼容、工具往返可用或压力测试通过。
 - 普通使用不改 settings/agents/CLAUDE.md；只有安装分支在具体 preview 与授权 apply 下写入选定字段（四键 env 白名单与 canonical `modelSettings` 限制见 [installation.md](installation.md)）。安装 agent、改本机 settings 或代理配置都需用户明确授权；写前先核对必要字段（优先 helper 白名单摘要）、备份后再写。
 - skill 内参考用相对路径（随目录安装，安装副本有效）；仓库/外部文档用绝对 URL。

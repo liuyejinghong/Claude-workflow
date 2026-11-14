@@ -34,13 +34,13 @@ _TEMP_DIRS = []
 
 
 def _tmp_base():
-    """fixture 目录优先 CLAUDE_JOB_DIR/tmp，其次系统临时目录。"""
+    """fixture 目录优先 CLAUDE_JOB_DIR/tmp，其次系统临时目录；返回解析后的真实路径，避免 /var 等符号链接。"""
     job = os.environ.get("CLAUDE_JOB_DIR")
     if job:
         base = Path(job) / "tmp"
         base.mkdir(parents=True, exist_ok=True)
-        return base
-    return Path(tempfile.gettempdir())
+        return base.resolve()
+    return Path(tempfile.gettempdir()).resolve()
 
 
 def make_sandbox(label):
@@ -287,10 +287,10 @@ class InstallEntrypoints(unittest.TestCase):
         self.assertTrue((target_skill / "SKILL.md").is_file())
         self.assertEqual(tree_snapshot(SOURCE_SKILL), tree_snapshot(target_skill))
         roles = json.loads((target_skill / "assets" / "roles.json").read_text(encoding="utf-8"))
-        self.assertEqual(set(roles), {"worker", "engineer", "reviewer", "researcher", "editor"})
+        self.assertEqual(set(roles), {"worker", "engineer", "reviewer", "researcher", "editor", "architect"})
         for role, asset in roles.items():
-            self.assertEqual(set(asset), {"name", "description", "body", "tools"} if role == "editor"
-                             else {"name", "description", "body"})
+            self.assertEqual(set(asset), {"name", "description", "body", "tools"}
+                             if role in ("editor", "architect") else {"name", "description", "body"})
 
         self.assertEqual((claude / "templates" / "keep.md").read_text(encoding="utf-8"), "template sentinel\n")
         self.assertEqual((claude / "settings.json").read_text(encoding="utf-8"), '{"keep": true}\n')
@@ -329,7 +329,7 @@ class InstallEntrypoints(unittest.TestCase):
         output = json.loads(proc.stdout)
         self.assertFalse(output["configured"])
         self.assertEqual([card["role"] for card in output["roles"]],
-                         ["worker", "engineer", "reviewer", "researcher", "editor"])
+                         ["worker", "engineer", "reviewer", "researcher", "editor", "architect"])
         self.assertEqual(tree_snapshot(claude), before)
         self.assertEqual({path.name for path in claude.iterdir()}, {"skills"})
         self.assertFalse((claude / "orchestration.json").exists())
@@ -368,7 +368,7 @@ class InstallEntrypoints(unittest.TestCase):
         output = json.loads(proc.stdout)
         self.assertTrue(output["configured"])
         self.assertEqual(output["agents"], [])
-        self.assertEqual(len(output["role_cards"]), 5)
+        self.assertEqual(len(output["role_cards"]), 6)
         self.assertIn("references/role-cards.md", output["required_resources"])
         before = tree_snapshot(claude)
         proc = run_verify([], env)

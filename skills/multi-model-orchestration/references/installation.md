@@ -2,7 +2,7 @@
 
 用户在 Claude Code 中调用 `/multi-model-orchestration install` 时，按本页顺序执行。这是 skill 的安装分支，不是 Workflow 编排；普通任务不读本页。
 
-先分清两件事：**安装文件**（默认 `./install.sh` 只复制本 skill 目录与五岗纯职责定义，不创建模型代理、不写角色卡、不预置候选或 priority）与**配置角色和模型**（本页：用户明确要求时，把当前环境实际可用的 agent/模型绑定到角色）。全新配置且尚无用户绑定时，五岗处于未配置状态。已有角色卡、代理和设置会保留，按现有有效规则使用；provider、凭据与路由仍由用户环境负责。
+先分清两件事：**安装文件**（默认 `./install.sh` 只复制本 skill 目录与六岗纯职责定义，不创建模型代理、不写角色卡、不预置候选或 priority）与**配置角色和模型**（本页：用户明确要求时，把当前环境实际可用的 agent/模型绑定到角色）。全新配置且尚无用户绑定时，六岗处于未配置状态。已有角色卡、代理和设置会保留，按现有有效规则使用；provider、凭据与路由仍由用户环境负责。
 
 用户明确要求配置、且已有可复用的原生 agent 时优先走角色卡轻量路径（见 [role-cards.md](role-cards.md)）：写一份 `orchestration.json` 引用已有 agent 即可，不跑本页的 scan 安装流程，也不为角色卡重配 provider、订阅或上下文参数。本页只在用户明确要求配置、缺 agent、或需要显式配置单模型入口（`roles.<role>.model`）时使用。
 
@@ -19,7 +19,7 @@ helper 不自动推测这些状态：`scan` 接受 `--claude-subscription confir
 
 ## 顺序总览
 
-适用性检查（第 0 步）→ 探索当前会话已能调用的 agent、已配置模型与用户偏好（只读发现，不代表可用或已被选中）→ 与用户确认五岗职责、候选、精确 `model` 或 `inherit` 及优先顺序（拟定确认草表）→ 上下文检查（必经，写入可选）→ 形成 plan → preview（不落盘，含合并后的配置确认表与真实文件动作）→ 用户一次确认授权 → apply → 重载与最小本地验证。
+适用性检查（第 0 步）→ 探索当前会话已能调用的 agent、已配置模型与用户偏好（只读发现，不代表可用或已被选中）→ 与用户确认六岗职责、候选、精确 `model` 或 `inherit` 及优先顺序（拟定确认草表）→ 上下文检查（必经，写入可选）→ 形成 plan → preview（不落盘，含合并后的配置确认表与真实文件动作）→ 用户一次确认授权 → apply → 重载与最小本地验证。
 
 ## 命令
 
@@ -45,7 +45,7 @@ python3 -I <installed-skill>/scripts/setup.py <scan|preview|apply|verify> \
 
 ## 2. 角色职责与用户确认
 
-五个岗位的纯职责定义（name/description/body/tools）随 skill 提供，不含模型推荐、默认顺序或 priority。默认安装只提供这些定义，不创建 agent、不写 `orchestration.json`、不预置候选。全新配置且尚无用户绑定时，五岗处于未配置状态；已有角色卡和角色代理保留，按现有有效规则使用。本页只给匹配用的职责提要：
+六个岗位的纯职责定义（name/description/body/tools）随 skill 提供，不含模型推荐、默认顺序或 priority。默认安装只提供这些定义，不创建 agent、不写 `orchestration.json`、不预置候选。全新配置且尚无用户绑定时，六岗处于未配置状态；已有角色卡和角色代理保留，按现有有效规则使用。本页只给匹配用的职责提要：
 
 | 角色 | 角色名（可选生成时） | 职责提要 |
 |---|---|---|
@@ -54,6 +54,7 @@ python3 -I <installed-skill>/scripts/setup.py <scan|preview|apply|verify> \
 | reviewer | workflow-reviewer | 独立整体正确性与合同审查；只审不改（除非授权）；实现者不在同上下文自审 |
 | researcher | workflow-researcher | 日常检索/取证/自动化，或单独限界的深度研究/证明/仿真/独立第二意见；不设固定能力梯度，不滥发 fan-out |
 | editor | workflow-editor | 指定纯文字润色与 UI 审美反馈；工具限 Read/Glob/Grep/Edit/Write |
+| architect | workflow-architect | 模块边界、业务流程必要性与最简设计、跨系统合同与重大取舍；只读，按需调用；不做日常审查或实施 |
 
 这些 `workflow-*` 名称只在用户明确选择生成单模型入口时使用；默认安装不创建对应 agent，也不预置任何候选。
 
@@ -70,7 +71,7 @@ python3 -I <installed-skill>/scripts/setup.py <scan|preview|apply|verify> \
 
 ## 3. 配置确认表（与 preview 一并一次确认）
 
-匹配阶段先拟定确认草表；表随最终 preview 一并向用户呈现并一次确认，避免 preview 前就声称已知具体文件动作。向导把已能调用的 agent/模型、发现来源、用户偏好与用户确认的可用性证据合并成一张覆盖全部五个角色的表。表是向导据此合并来源与能力证据后的人读呈现，不得表述成 helper 已自动验证访问、权限或能力。
+匹配阶段先拟定确认草表；表随最终 preview 一并向用户呈现并一次确认，避免 preview 前就声称已知具体文件动作。向导把已能调用的 agent/模型、发现来源、用户偏好与用户确认的可用性证据合并成一张覆盖全部六个角色的表。表是向导据此合并来源与能力证据后的人读呈现，不得表述成 helper 已自动验证访问、权限或能力。
 
 | 角色/职责 | 已能调用的候选与来源 | 拟绑定（model / inherit / 复用 / 跳过） | 可用性与能力依据/未知项 | effort 与预计文件动作 | 选择理由 |
 |---|---|---|---|---|---|
@@ -79,7 +80,7 @@ python3 -I <installed-skill>/scripts/setup.py <scan|preview|apply|verify> \
 规则：
 
 - 候选出现在配置或供应商广告中不等于成功访问；用户确认算可用证据。
-- 五个角色都要在表中展示，但不强行生成五个 agent：无证据或无候选的角色按跳过呈现，不硬绑；不自动安装任何预设名单、不拼 provider 前缀或 `:max`/`[1m]` 后缀。
+- 六个角色都要在表中展示，但不强行生成六个 agent：无证据或无候选的角色按跳过呈现，不硬绑；不自动安装任何预设名单、不拼 provider 前缀或 `:max`/`[1m]` 后缀。
 - 已有合适 agent 直接复用，并在表中如实标注。
 - 未经用户确认的表（随 preview 呈现）绝不 apply；用户已给出具体覆盖授权时免重复询问。
 - scope、安全边界、备份与参数机理照旧（见下文 apply 与 [third-party-context.md](third-party-context.md)）。

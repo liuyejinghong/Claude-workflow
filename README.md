@@ -8,7 +8,7 @@ Claude-workflow 是一套在 Claude Code 里用多个模型协作开发的方式
 
 先认识三个词：
 
-- **岗位**：固定的五类工作：常规实现（worker）、困难实现（engineer）、独立复核（reviewer）、资料调研（researcher）、文字与审美（editor）。配置里用的是括号中的英文键名。
+- **岗位**：固定的六类工作：常规实现（worker）、困难实现（engineer）、独立复核（reviewer）、资料调研（researcher）、文字与审美（editor）、架构与业务评审（architect）。配置里用的是括号中的英文键名。
 - **代理**：Claude Code 的子代理，定义里指定用哪个模型；模型都通过代理调用。
 - **角色卡**：记录每类岗位有哪些候选代理、先找谁。可选，默认不创建；文件默认在 `~/.claude/orchestration.json`。
 
@@ -87,7 +87,7 @@ Claude-workflow 是一套在 Claude Code 里用多个模型协作开发的方式
 只做调研、不改代码，查完把结论和出处一起交回来。
 ```
 
-之后遇到要查资料的任务，当前会话先把调研交给这个代理。带来源的结论再交给写代码或复核的代理。五类岗位是固定的，加不了新岗位；你配置的是每类岗位用哪些代理、谁先谁后。更细的说明见[角色卡参考](skills/multi-model-orchestration/references/role-cards.md)。
+之后遇到要查资料的任务，当前会话先把调研交给这个代理。带来源的结论再交给写代码或复核的代理。六类岗位是固定的，加不了新岗位；你配置的是每类岗位用哪些代理、谁先谁后。更细的说明见[角色卡参考](skills/multi-model-orchestration/references/role-cards.md)。
 
 ## 快速开始
 
@@ -105,11 +105,11 @@ cd Claude-workflow
 ./install.sh
 ```
 
-脚本把 skill 复制到 `~/.claude/skills/multi-model-orchestration`（配置目录默认 `~/.claude`，可用 `CLAUDE_HOME` 或 `CLAUDE_CONFIG_DIR` 改）。已有同名目录会先备份到配置目录下的 `.workflow-backups`，不删旧备份。脚本不改 settings、代理和 `CLAUDE.md`。五类岗位的职责说明随 skill 一起装；你已有的角色卡、代理和设置都会保留。
+脚本把 skill 复制到 `~/.claude/skills/multi-model-orchestration`（配置目录默认 `~/.claude`，可用 `CLAUDE_HOME` 或 `CLAUDE_CONFIG_DIR` 改）。已有同名目录会先备份到配置目录下的 `.workflow-backups`，不删旧备份。脚本不改 settings、代理和 `CLAUDE.md`。六类岗位的职责说明随 skill 一起装；你已有的角色卡、代理和设置都会保留。
 
 装完新开一个会话，或运行 `claude --continue`。新装的 skill 要重开后才会加载，重开后 `/multi-model-orchestration` 命令才可用。
 
-刚装好时，五类岗位只有职责说明，还没有候选。不配置也能用：当前会话按任务从你能调用的代理里挑。配置角色卡是为了固定每类岗位先找谁。需要配置时，在 Claude Code 里运行配置向导：
+刚装好时，六类岗位只有职责说明，还没有候选。不配置也能用：当前会话按任务从你能调用的代理里挑。配置角色卡是为了固定每类岗位先找谁。需要配置时，在 Claude Code 里运行配置向导：
 
 ```text
 /multi-model-orchestration install
@@ -119,13 +119,14 @@ cd Claude-workflow
 
 ### 每类岗位适合什么模型
 
-当前会话不占岗位，用你在 Claude Code 里选的模型，负责规划和最终验收。五类岗位看重的能力不同：
+当前会话不占岗位，用你在 Claude Code 里选的模型，负责规划和最终验收。六类岗位看重的能力不同：
 
 - 常规实现：日常改动量大、单次风险低，看重速度、成本和工具调用稳定。
 - 困难实现：跨模块或高风险改动，推理和长任务能力优先，再按成本选择。
 - 独立复核：只审不改，宜用与实现者不同的模型，看重发现问题的能力。
 - 资料调研：带来源的检索和调查，看重长上下文和检索能力。
 - 文字与审美：文案润色看重语言质量；界面审美反馈还要能看图，需要多模态。
+- 架构与业务评审：只在重大取舍、业务流程存疑或跨系统合同时按需使用，看重第一性原理判断和对业务现状的理解，成本通常最高。
 
 下面是示例，不是要求，顺序也不代表优先级：
 

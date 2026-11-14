@@ -1,6 +1,6 @@
 # 角色卡：岗位候选与优先级
 
-skill `multi-model-orchestration` 的按需参考：决定"某个岗位用哪些原生 agent、按什么顺序"时读这里。角色卡是可选配置，只在用户明确要求时写入；默认安装不创建角色卡。没有角色卡时，五岗没有候选表；已有角色代理仍可按现有有效规则使用。角色卡只管候选与优先级；模型、effort、工具与描述仍以原生 agent 定义为准，JSON 不改 agent 权限，也不代配路由。
+skill `multi-model-orchestration` 的按需参考：决定"某个岗位用哪些原生 agent、按什么顺序"时读这里。角色卡是可选配置，只在用户明确要求时写入；默认安装不创建角色卡。没有角色卡时，六岗没有候选表；已有角色代理仍可按现有有效规则使用。角色卡只管候选与优先级；模型、effort、工具与描述仍以原生 agent 定义为准，JSON 不改 agent 权限，也不代配路由。
 
 ## 配置位置与结构
 
@@ -29,12 +29,13 @@ skill `multi-model-orchestration` 的按需参考：决定"某个岗位用哪些
     "researcher": {
       "candidates": [{"agent": "your-research-agent", "priority": 1}]
     },
-    "editor": {"candidates": [{"agent": "your-editor-agent", "priority": 1}]}
+    "editor": {"candidates": [{"agent": "your-editor-agent", "priority": 1}]},
+    "architect": {"candidates": [{"agent": "your-architecture-review-agent", "priority": 1}]}
   }
 }
 ```
 
-- 五个岗位：`worker`、`engineer`、`reviewer`、`researcher`、`editor`。岗位可整体省略，`candidates` 可为空数组。
+- 六个岗位：`worker`、`engineer`、`reviewer`、`researcher`、`editor`、`architect`。岗位可整体省略，`candidates` 可为空数组。
 - `agent` 写你工具目录里**确切的原生 agent 名**（不是模型 ID）；`priority` 是 0..10 的整数，1 最高、10 最低，0 表示该岗位停用；同值按卡内出现顺序。
 - 拒绝：bool 当整数、越界 priority、未知字段、同一岗位内 agent 重复。跨岗位可以重复同一 agent。没有 `enabled` 字段——启停只用 priority 表达。
 - 卡不复制 model/effort/description：这些以原生 agent 定义为准。
@@ -51,7 +52,7 @@ python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role R
 
 - 每次调用都重新读表：改 priority 不需要重启或 reload。
 - 输出：`ok` / `command` / `config_path` / `configured` / `roles[]`。`roles[]` 每项含 `role`、`description`、`body`、可选 `tools`、`configured`、`candidates`（启用候选，priority 1..10，按 priority 稳定排序）、`disabled_candidates`（priority 0 的停用项，按卡内原序）。`--role` 只返回该岗位。
-- 整个配置文件缺失：`configured` 为 false，明确报告角色卡未配置；五岗没有候选表。已有的角色代理仍可按当前会话实际可用 agent 的 description 与用户指定选型，不猜不虚构，也不称为角色卡分流。
+- 整个配置文件缺失：`configured` 为 false，明确报告角色卡未配置；六岗没有候选表。已有的角色代理仍可按当前会话实际可用 agent 的 description 与用户指定选型，不猜不虚构，也不称为角色卡分流。
 - 配置损坏：直接报告需要修复（指出非法字段），**不**静默回退默认选型。
 - 配置文件存在但该岗位被省略、`candidates` 为空或全为 priority 0：该岗位没有可派发候选，报告缺口；**不**回退任何默认名单，也不绕过 priority 0 去默认派发。
 - 只读本地文件：不读密钥、不联网。
@@ -75,7 +76,7 @@ python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role R
 ## 委托合同怎么带进 prompt
 
 - 派发时把所选岗位的 body（职责与交付合同）并入本次 prompt，与任务目标、路径、约束和验收标准合成一份自包含 prompt；不能只报一个 agent 名就派发。
-- 岗位带 `tools`（editor 为 Read/Glob/Grep/Edit/Write）时，在合同里显式写出工具范围。
+- 岗位带 `tools`（editor 为 Read/Glob/Grep/Edit/Write；architect 为 Read/Glob/Grep/Bash）时，在合同里显式写出工具范围。
 - 卡里的 tools 是合同说明，不是权限控制：JSON 不修改原生 agent 的权限或定义，agent 定义原样使用。禁止被派者再委托靠 agent 定义 frontmatter 的 `disallowedTools: Agent, Workflow, SendMessage, EnterWorktree` 落实（见 SKILL「调用协议」）。
 
 ## 写卡（plan 的 orchestration 段）
@@ -104,7 +105,7 @@ python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role R
 
 ## 与旧单模型入口的关系
 
-- 旧配置已生成的 `workflow-*` 单模型 agent 入口保留可用（兼容路径），覆盖当前五个岗位；默认安装不生成这些入口。
+- 旧配置已生成的 `workflow-*` 单模型 agent 入口保留可用（兼容路径），覆盖当前六个岗位；默认安装不生成这些入口。
 - 新配置优先引用你已有的原生 agent，不为每个岗位再生成一份重复代理。
 - 旧 `visual` 岗位不再提供：已存在的 `workflow-visual` 文件不会被删除或改动。要继续用这类能力，改用其他岗位并配一个已确认原生视觉的 agent；不承诺自动迁移。
 
