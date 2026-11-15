@@ -818,7 +818,7 @@ def apply_plan(plan, config_dir):
 def verify(config_dir):
     required = ["SKILL.md", "references/installation.md", "references/agents-and-installation.md",
                 "references/third-party-context.md", "references/role-cards.md", "assets/roles.json",
-                "assets/delegation-rule.txt", "scripts/setup.py"]
+                "assets/delegation-rule.txt", "scripts/setup.py", "scripts/ledger.py"]
     for relative in required:
         read_bytes(SKILL_ROOT / relative)
     assets = load_assets()

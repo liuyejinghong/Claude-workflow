@@ -156,7 +156,7 @@ plan schema（各段均可省略；拒绝未知可写字段）：
 ## 7. 重载与最小验证
 
 - 重载：新开会话，或 `claude --continue` 保留对话重启。新装的 agents 目录需重启后才会出现在实际工具目录；不承诺固定生效时间，以重启后的实际工具目录为准。
-- `setup.py verify`：本地检查已安装 skill 的 SKILL.md、references、`assets/roles.json`、`scripts/setup.py` 是否存在，以及用户明确生成/选择的 `workflow-*` 定义（如有）的基本 frontmatter 与用户确认的 model/effort；未显式设置 effort 时回报 null 并说明继承运行环境，显式 `xhigh` / `max` 原样回报；仅安装 skill 或部分角色也算通过。
+- `setup.py verify`：本地检查已安装 skill 的 SKILL.md、references、`assets/roles.json`、`scripts/setup.py`、`scripts/ledger.py` 是否存在，以及用户明确生成/选择的 `workflow-*` 定义（如有）的基本 frontmatter 与用户确认的 model/effort；未显式设置 effort 时回报 null 并说明继承运行环境，显式 `xhigh` / `max` 原样回报；仅安装 skill 或部分角色也算通过。
 - `setup.py cards`：只读角色卡配置与岗位定义，不写文件；每次调用重新读表，不需要重载。
 - 默认 `setup.py verify` 不发生成请求。可选逐角色 Read 自证或显式 `--smoke` 冒烟是单独发起的模型调用，会消耗所选模型额度，不能表述为零生成检查；这些调用只作最小可读性/连通证据，不声明模型性能、不做压力测试。
 
