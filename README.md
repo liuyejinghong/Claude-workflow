@@ -40,6 +40,36 @@ Claude-workflow 是一套在 Claude Code 里用多个模型协作开发的方式
 
 需要先了解外部资料时，也可以先让负责调研的代理带着来源查清，再开始写代码。
 
+## 当前会话按什么规矩派活
+
+装上之后，当前会话派活时遵守下面这些规矩。规矩写在编排手册里，你不用每次交代：
+
+- **每次委托写成一份完整的任务说明。** 说明里有目标、背景、能读和能写的文件、验收标准，以及遇到什么情况该停手回报。代理回报的第一行写状态：完成、部分完成或受阻。后面列出实际改了哪些文件、命令的真实输出和没解决的问题。
+- **被派的代理只干自己那份活。** 代理不能再派子代理，不能给别的代理派活，也不能切换工作树。觉得需要并行时，代理在回报里提出拆分建议，由当前会话决定。
+- **同一个文件同一时刻只有一个代理在写。** 几个代理要写同一批文件时，当前会话让这几个代理排队，或者给每个代理一份独立的工作树副本，再由一个代理集中合并。
+- **写代码的代理不复核自己的改动。** 复核交给没参与实现的代理。两个复核结论相反时，由当前会话亲自判断。验收时，当前会话自己运行测试和必要检查，不只看代理的报告。
+- **做不好时按次数升级。** 第 1 次不达标，当前会话补充任务说明，让原代理接着做。同一任务第 2 次不达标，换一个能力更强的候选。最强的候选连续 2 次不达标，当前会话才亲自处理卡住的那一小部分。
+
+### 长任务的决定与问题记录
+
+任务跨好几个阶段、经过多轮复核时，对话会变长，Claude Code 会压缩上下文。压缩后，当前会话可能忘掉哪些决定已经被推翻、哪条复核意见已经撤销。
+
+为此，当前会话会为这类任务维护一份“决定与问题记录”：
+
+- **记什么**：两类内容。
+  - 你和当前会话做过的决定，以及后来被哪条新决定替代。
+  - 复核提出的问题：出自哪个阶段、第几轮、哪个代理；后来判定成立还是撤销；成立的最终怎么处理，是改代码、加自动检查、加测试，还是只写成规则。
+- **谁写**：只有当前会话写。复核的代理照常在自己的报告里写问题。
+- **何时读**：上下文压缩后，或者换一个会话接手时，当前会话先读这份记录的摘要。摘要只列现行的决定和还没处理完的问题，已经了结的只留统计数。任务再长，要读的内容也只跟着没了结的事走。
+
+这份记录还能回答两类问题：每个阶段复核了几轮、每轮有几条问题成立；同一类问题有没有第二次出现。同一类问题第二次成立时，当前会话把这类问题转成自动检查或测试，以后由检查拦截，不再靠复核发现。
+
+你不用记这份记录的格式，像这样说就行：
+
+```text
+/multi-model-orchestration 这个任务会分好几个阶段做，记下每次的决定和复核问题；做完一个阶段告诉我复核了几轮、成立了几条。
+```
+
 ## 几个使用案例
 
 下面几个例子都从“你想做什么”出发，重点是你输入什么。案例 A 装好就能用；案例 B、C、D 会改配置：当前会话先给出预览，你确认后才写入。例子里的代理名是占位符，换成你当前会话能调用的名称。不确定有哪些时，先跑一遍[快速开始](#快速开始)里的配置向导。
@@ -105,7 +135,7 @@ cd Claude-workflow
 ./install.sh
 ```
 
-脚本把 skill 复制到 `~/.claude/skills/multi-model-orchestration`（配置目录默认 `~/.claude`，可用 `CLAUDE_HOME` 或 `CLAUDE_CONFIG_DIR` 改）。已有同名目录会先备份到配置目录下的 `.workflow-backups`，不删旧备份。脚本不改 settings、代理和 `CLAUDE.md`。六类岗位的职责说明随 skill 一起装；你已有的角色卡、代理和设置都会保留。
+脚本把 skill 复制到 `~/.claude/skills/multi-model-orchestration`（配置目录默认 `~/.claude`，可用 `CLAUDE_HOME` 或 `CLAUDE_CONFIG_DIR` 改）。已有同名目录会先备份到配置目录下的 `.workflow-backups`，不删旧备份。脚本不改 settings、代理和 `CLAUDE.md`。六类岗位的职责说明和决定与问题记录的脚本随 skill 一起装；你已有的角色卡、代理和设置都会保留。以后更新，在仓库目录里 `git pull` 后再运行一次 `./install.sh`。
 
 装完新开一个会话，或运行 `claude --continue`。新装的 skill 要重开后才会加载，重开后 `/multi-model-orchestration` 命令才可用。
 
@@ -140,15 +170,16 @@ cd Claude-workflow
 
 ## 查看运行状态
 
-如果想看某次任务里有哪些模型在工作、各自占用了多少上下文、输出速度怎么样，可以加装独立的 [token-speed](mods/token-speed/README.md) 组件。token-speed 在输入框上方按代理显示模型、上下文占用和生成速率，装不装都不影响上面的使用。
+想看某次任务里哪些模型在工作、各占多少上下文、输出多快，可以加装独立的 [token-speed](mods/token-speed/README.md) 组件。token-speed 在输入框上方按代理显示模型、上下文占用和生成速率，装不装都不影响上面的使用。
 
 ## 更多用法
 
 - 想调整每类岗位用哪些代理、谁先谁后：[角色卡参考](skills/multi-model-orchestration/references/role-cards.md)
 - 模型接不上，或安装后当前会话看不到新代理：[代理与安装排查](skills/multi-model-orchestration/references/agents-and-installation.md)
 - 第三方模型的上下文窗口、压缩和输出上限：[第三方上下文](skills/multi-model-orchestration/references/third-party-context.md)
-- 委托任务怎么写、并行和复核怎么安排：[编排手册](skills/multi-model-orchestration/SKILL.md)（含角色卡、调用协议、审查与返工等章节）
+- 委托任务怎么写、并行和复核怎么安排、决定与问题记录怎么用：[编排手册](skills/multi-model-orchestration/SKILL.md)（含角色卡、调用协议、并发写入与交接、审查与返工等章节）
 - 想让每个会话都带上委托约定：[常驻规则模板](templates/CLAUDE.md.snippet)
+- 省 token 的编排做法、订阅套餐对比等调研快照：[调研归档](docs/research/README.md)
 - 委托策略的改进计划（已评估，未采纳）：[子代理编排收敛方案与验证计划](docs/plans/orchestration-simplification.md)
 
-版本：Claude-workflow 0.9.0，token-speed 0.8.3（tag `token-speed-v0.8.3`），两者独立发版。更新见 [CHANGELOG](CHANGELOG.md) 与 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)，许可证 [MIT](LICENSE)。
+版本：Claude-workflow 0.11.0，token-speed 0.8.3（tag `token-speed-v0.8.3`），两者独立发版。更新见 [CHANGELOG](CHANGELOG.md) 与 [token-speed 更新记录](mods/token-speed/CHANGELOG.md)，许可证 [MIT](LICENSE)。
