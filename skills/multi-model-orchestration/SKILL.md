@@ -117,8 +117,8 @@ python3 -I <installed-skill>/scripts/setup.py cards [--config-dir DIR] [--role R
   - 两个审查者结论相反时，由主控亲自裁决。
 - 任务过大则拆小，仍卡住再报告用户；不无限盲改。
 - 必要检查通过后，仅在新改动、失败或具体疑点出现时扩大或重复验证。
-- 长任务（多阶段、多轮审查）由主控用台账登记裁定与发现：`python3 -I <installed-skill>/scripts/ledger.py --dir <任务产物目录> add|digest|count|show`。压缩或接手后先读 `<dir>/digest.md` 恢复现行裁定与未关闭发现；同类发现成立第 2 次时运行 `count`，按本节把它转为检查或测试。
-- 只有主控写台账；审查者仍只在自己的报告里写发现。台账目录放在任务产物目录（随任务归档），不放进被改的仓库。
+- 长任务（多阶段、多轮审查）由主控用「决定与问题记录」登记：记决定、审查发现及处理结果；只有主控写；压缩或接手后先读摘要。命令：`python3 -I <installed-skill>/scripts/ledger.py --dir <任务产物目录> add|digest|digest --all|count|stats|show`。发现可用 `--stage`、`--round`、`--reviewer` 记录阶段、第几轮与审查者，决定可用 `--stage`；默认 `digest` 只列现行决定、待裁定与成立未关闭的发现，并附类别与阶段×轮次统计，`digest --all` 才列已了结项。`stats` 按阶段列出审查轮次数、每轮发现数与成立数、每个审查者的成立数。压缩或接手后先读 `<dir>/digest.md`；同类发现成立第 2 次时运行 `count`，按本节把它转为检查或测试。
+- 只有主控写记录；审查者仍只在自己的报告里写发现。记录目录放在任务产物目录（随任务归档），不放进被改的仓库。
 
 ## Workflow / ultracode
 
